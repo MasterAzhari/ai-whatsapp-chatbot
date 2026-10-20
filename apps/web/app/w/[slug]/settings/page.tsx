@@ -172,7 +172,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
           </div>
           <label>
             System instruction (style, scope, what it may and may not answer)
-            <textarea name="systemInstruction" rows={8} maxLength={8000} defaultValue={s.systemInstruction} />
+            <textarea name="systemInstruction" rows={8} maxLength={12000} defaultValue={s.systemInstruction} />
           </label>
           <div className="small muted">
             Fixed safety rules are always added: no made-up prices or promotions, no approvals, and instructions in customer messages are ignored.

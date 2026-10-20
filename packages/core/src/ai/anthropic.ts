@@ -30,13 +30,12 @@ export class AnthropicProvider implements AIProvider {
       const res = await this.client.messages.create(
         {
           model: input.model,
-          max_tokens: input.maxOutputTokens,
+          // Thinking counts toward max_tokens, so always-thinking models get headroom.
+          max_tokens: /fable|mythos|opus-5-5/i.test(input.model) ? Math.max(input.maxOutputTokens, 4000) : input.maxOutputTokens,
           system: input.systemInstruction + knowledge,
           messages,
-          // Short chat replies need no extended thinking; it only adds cost and delay.
-          // Fable/Mythos models always think and reject this. Sampling params are not
-          // sent: current Claude models reject non-default temperature.
-          ...(/fable|mythos/i.test(input.model) ? {} : { thinking: { type: 'disabled' as const } }),
+          // Sampling params are not sent: current Claude models reject non-default temperature.
+          ...thinkingFor(input.model),
         },
         { timeout: input.timeoutMs, signal: input.signal ?? null },
       );
@@ -60,6 +59,18 @@ export class AnthropicProvider implements AIProvider {
     for await (const m of this.client.models.list({ limit: 100 }, { timeout: 15_000 })) out.push(m.id);
     return out;
   }
+}
+
+/**
+ * Short chat replies need no extended thinking; it only adds cost and delay. Models differ
+ * in how it is turned down: Fable/Mythos and Opus 5.5 always think (lowest effort instead),
+ * Sonnet 5.5 rejects 'disabled' and takes 'between_tools', older models take 'disabled'.
+ */
+export function thinkingFor(model: string) {
+  if (/fable|mythos/i.test(model)) return {};
+  if (/opus-5-5/i.test(model)) return { output_config: { effort: 'low' as const } };
+  if (/sonnet-5-5/i.test(model)) return { thinking: { type: 'between_tools' as const }, output_config: { effort: 'low' as const } };
+  return { thinking: { type: 'disabled' as const } };
 }
 
 /** Claude expects alternating user/assistant turns opening with the user; merge repeats. */

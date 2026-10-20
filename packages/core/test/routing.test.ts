@@ -10,7 +10,7 @@ import { getConversation, resumeBot, takeOver } from '../src/repos/conversations
 import { MockChannelAdapter } from '../src/channels/mock.js';
 import { MockAIProvider, type AIProvider, type GenerateReplyInput, type GenerateReplyResult } from '../src/ai/provider.js';
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
-import { AnthropicProvider, toMessages } from '../src/ai/anthropic.js';
+import { AnthropicProvider, thinkingFor, toMessages } from '../src/ai/anthropic.js';
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
 import { decide, extractHandover, leadActive, routeInbound } from '../src/routing/router.js';
 import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
@@ -154,6 +154,12 @@ describe('claude adapter', () => {
     assert.equal(((await c(reply(429, err('rate_limit_error')))) as any).reason, 'quota');
     assert.equal(((await c(reply(404, err('not_found_error')))) as any).reason, 'invalid_model');
     assert.equal(((await c(reply(200, { ...ok, content: [], stop_reason: 'refusal' }))) as any).reason, 'blocked');
+  });
+  test('thinking is turned down the way each Claude model accepts', () => {
+    assert.deepEqual(thinkingFor('claude-haiku-5-5'), { thinking: { type: 'disabled' } });
+    assert.deepEqual(thinkingFor('claude-sonnet-5-5'), { thinking: { type: 'between_tools' }, output_config: { effort: 'low' } });
+    assert.deepEqual(thinkingFor('claude-opus-5-5'), { output_config: { effort: 'low' } });
+    assert.deepEqual(thinkingFor('claude-fable-5-1'), {});
   });
   test('toMessages opens with the customer', () => {
     assert.equal(toMessages([{ role: 'assistant', text: 'x' }]).length, 0);

@@ -108,7 +108,7 @@ export const SettingsUpdate = z.object({
   expectedVersion: z.number().int(),
   personaName: z.string().trim().min(1).max(80).optional(),
   language: z.string().trim().min(2).max(10).optional(),
-  systemInstruction: z.string().max(8000).optional(),
+  systemInstruction: z.string().max(12000).optional(),
   aiEnabled: z.boolean().optional(),
   aiProvider: z.enum(AI_PROVIDERS).optional(),
   aiModel: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{1,80}$/i, 'invalid model id').nullable().optional(),
