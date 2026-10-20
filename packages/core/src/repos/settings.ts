@@ -101,7 +101,7 @@ export const SettingsUpdate = z.object({
   typingIndicator: z.boolean().optional(),
 });
 
-const COLUMNS: Record<string, string> = {
+export const SETTINGS_COLUMNS: Record<string, string> = {
   personaName: 'persona_name',
   language: 'language',
   systemInstruction: 'system_instruction',
@@ -144,7 +144,7 @@ export async function updateBotSettings(
     const before = await loadSettings(tx, ctx.tenantId);
     const sets: string[] = [];
     const vals: unknown[] = [ctx.tenantId, v.expectedVersion, ctx.user.id];
-    for (const [k, col] of Object.entries(COLUMNS)) {
+    for (const [k, col] of Object.entries(SETTINGS_COLUMNS)) {
       const val = (v as Record<string, unknown>)[k];
       if (val === undefined) continue;
       vals.push(val);

@@ -31,6 +31,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
               <a href={`/w/${slug}/keywords`}>Keyword</a>
               <a href={`/w/${slug}/settings`}>Tetapan bot</a>
               <a href={`/w/${slug}/playground`}>Playground</a>
+              <a href={`/w/${slug}/template`}>Salin tetapan</a>
             </>
           )}
           <a href={`/w/${slug}/connections`}>Sambungan</a>

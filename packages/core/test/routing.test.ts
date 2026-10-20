@@ -21,6 +21,7 @@ import { createKeywordRule, listKeywordRules, updateKeywordRule } from '../src/r
 import { getBotSettings, setCredential, updateBotSettings, VersionConflictError, type BotSettings } from '../src/repos/settings.js';
 import { getUsageSummary } from '../src/repos/usage.js';
 import { createAiResolver } from '../src/routing/ai-resolver.js';
+import { exportBotTemplate, importBotTemplate } from '../src/repos/template.js';
 import { freshDb } from './helpers.js';
 
 // ------------------------------------------------------------------ pure parts
@@ -463,5 +464,50 @@ describe('QR channels', () => {
     assert.ok('results' in r && r.results[0]!.kind === 'stored');
     assert.deepEqual(await receiveGatewayEvents(db, { channelId: chA, events: [ev] }), { error: 'unknown channel', status: 404 });
     assert.equal(((await receiveGatewayEvents(db, { channelId: id, events: [{ type: 'message' }] })) as any).status, 400);
+  });
+});
+
+describe('bot template (copy setup to an agent workspace)', () => {
+  let ctxC: TenantContext;
+  before(async () => {
+    const tC = await createTenant(db, { slug: 'rc', name: 'Agent C' });
+    const c = await createUser(db, { email: 'rc@example.test', name: 'C', password: 'password-c-123' });
+    await addMembership(db, tC, c, 'admin');
+    ctxC = (await resolveTenantContext(db, (await getSessionUser(db, (await login(db, 'rc@example.test', 'password-c-123'))!))!, 'rc'))!;
+    await createKeywordRule(db, ctxC, { name: 'Lama', matchType: 'exact', patterns: ['lama'], replyText: 'old' });
+  });
+
+  test('export carries settings and rules but never keys or channel ids', async () => {
+    await setCredential(db, ctxA, 'gemini_api_key', 'AIzaFAKEKEY-template-0002');
+    await createKeywordRule(db, ctxA, { name: 'Kawasan', matchType: 'phrase', patterns: ['kawasan'], replyText: 'Kami pasang di Lembah Klang.', channelId: chA });
+    const t = await exportBotTemplate(db, ctxA, 'A');
+    const json = JSON.stringify(t);
+    assert.ok(!json.includes('AIza') && !json.includes(chA));
+    assert.ok(t.keywordRules.some((r) => r.name === 'Kawasan'));
+    assert.equal(t.settings.aiModel, (await getBotSettings(db, ctxA)).aiModel);
+  });
+
+  test('import copies the setup; add mode keeps old rules, replace mode drops them', async () => {
+    const t = JSON.parse(JSON.stringify(await exportBotTemplate(db, ctxA)));
+    const r1 = await importBotTemplate(db, ctxC, t, { replaceRules: false });
+    assert.equal(r1.rulesRemoved, 0);
+    const a = await getBotSettings(db, ctxA);
+    const c = await getBotSettings(db, ctxC);
+    assert.equal(c.personaName, a.personaName);
+    assert.equal(c.systemInstruction, a.systemInstruction);
+    assert.equal(c.aiKeyMasked, null); // agent sets their own key
+    const names = (await listKeywordRules(db, ctxC)).map((r) => r.name);
+    assert.ok(names.includes('Lama') && names.includes('Kawasan'));
+    const r2 = await importBotTemplate(db, ctxC, t, { replaceRules: true });
+    assert.equal(r2.rulesRemoved, names.length);
+    assert.equal((await listKeywordRules(db, ctxC)).length, t.keywordRules.length);
+    assert.equal((await listKeywordRules(db, ctxA)).some((r) => r.name === 'Lama'), false);
+  });
+
+  test('bad files and non-admins are rejected', async () => {
+    await assert.rejects(importBotTemplate(db, ctxC, { format: 'other' }, { replaceRules: false }));
+    const t = await exportBotTemplate(db, ctxA);
+    await assert.rejects(importBotTemplate(db, ctxC, { ...t, settings: { ...t.settings, replyDelayMinSec: 9, replyDelayMaxSec: 2 } }, { replaceRules: false }));
+    await assert.rejects(importBotTemplate(db, { ...ctxC, role: 'operator' }, t, { replaceRules: false }));
   });
 });
