@@ -1,0 +1,22 @@
+{
+  "name": "ai-whatsapp-chatbot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-tenant AI WhatsApp chatbot platform (website/inbox, official + QR adapters, Gemini, MCP).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w @chatbot/core && npm run build -w @chatbot/gateway && npm run build -w @chatbot/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test -w @chatbot/core && npm run test -w @chatbot/gateway",
+    "migrate": "npm run migrate -w @chatbot/core",
+    "seed": "npm run seed -w @chatbot/core",
+    "dev": "npm run dev -w @chatbot/web",
+    "worker": "npm run worker -w @chatbot/core"
+  }
+}
