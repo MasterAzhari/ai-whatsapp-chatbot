@@ -157,3 +157,80 @@ export async function changeOwnPassword(db: Db, user: SessionUser, current: stri
     await tx.query(`INSERT INTO audit_events (actor_type, actor_id, action, source) VALUES ('user', $1, 'auth.password_change', 'web')`, [user.id]);
   });
 }
+
+export const RenameWorkspaceInput = NewAgentInput.pick({ workspaceName: true, slug: true });
+
+/** Renames a workspace (name and web address). Old links with the previous slug stop working. */
+export async function renameWorkspace(db: Db, owner: SessionUser, tenantId: string, input: z.input<typeof RenameWorkspaceInput>): Promise<{ slug: string }> {
+  requirePlatformOwner(owner);
+  const v = RenameWorkspaceInput.parse(input);
+  await withSystem(db, async (tx) => {
+    const before = await tx.query<{ slug: string; name: string }>('SELECT slug, name FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
+    if (!before.rows[0]) throw new Error('workspace tidak dijumpai');
+    const taken = await tx.query('SELECT 1 FROM tenants WHERE slug = $1 AND id <> $2', [v.slug, tenantId]);
+    if (taken.rowCount) throw Object.assign(new Error(`slug "${v.slug}" sudah digunakan`), { status: 409 });
+    await tx.query('UPDATE tenants SET name = $2, slug = $3 WHERE id = $1', [tenantId, v.workspaceName, v.slug]);
+    await tx.query(
+      `INSERT INTO audit_events (tenant_id, actor_type, actor_id, action, target_type, target_id, before, after, source)
+       VALUES ($1, 'user', $2, 'workspace.rename', 'tenant', $3, $4, $5, 'web')`,
+      [tenantId, owner.id, tenantId, JSON.stringify(before.rows[0]), JSON.stringify({ slug: v.slug, name: v.workspaceName })],
+    );
+  });
+  return { slug: v.slug };
+}
+
+/** Any signed-in user changes the name shown for them. */
+export async function changeOwnName(db: Db, user: SessionUser, name: string): Promise<void> {
+  const v = z.string().trim().min(1, 'nama diperlukan').max(200).parse(name);
+  await withSystem(db, (tx) => tx.query('UPDATE users SET name = $2 WHERE id = $1', [user.id, v]));
+}
+
+/**
+ * Sample data made when the server was first set up: mock (pretend) WhatsApp channels
+ * with their synthetic chats, and sample workspaces that are left with no channel.
+ * Real QR / official channels and their chats are never touched.
+ */
+export interface DemoData {
+  mockChannels: number;
+  conversations: number;
+  sampleWorkspaces: string[];
+}
+
+const SAMPLE_WORKSPACE = `t.name LIKE '%(data sintetik)'
+  AND NOT EXISTS (SELECT 1 FROM channels c WHERE c.tenant_id = t.id AND c.provider <> 'mock')`;
+
+export async function countDemoData(db: Db, owner: SessionUser): Promise<DemoData> {
+  requirePlatformOwner(owner);
+  return withSystem(db, async (tx) => {
+    const c = await tx.query<{ channels: number; conversations: number }>(
+      `SELECT count(*)::int AS channels,
+              (SELECT count(*)::int FROM conversations v JOIN channels ch ON ch.id = v.channel_id WHERE ch.provider = 'mock') AS conversations
+         FROM channels WHERE provider = 'mock'`,
+    );
+    const t = await tx.query<{ name: string }>(`SELECT t.name FROM tenants t WHERE ${SAMPLE_WORKSPACE} ORDER BY t.created_at`);
+    return { mockChannels: c.rows[0]!.channels, conversations: c.rows[0]!.conversations, sampleWorkspaces: t.rows.map((r) => r.name) };
+  });
+}
+
+export async function purgeDemoData(db: Db, owner: SessionUser): Promise<DemoData> {
+  requirePlatformOwner(owner);
+  return withSystem(db, async (tx) => {
+    const t = await tx.query<{ id: string; name: string }>(`SELECT t.id, t.name FROM tenants t WHERE ${SAMPLE_WORKSPACE}`);
+    const contacts = await tx.query<{ contact_id: string }>(
+      "SELECT DISTINCT v.contact_id FROM conversations v JOIN channels ch ON ch.id = v.channel_id WHERE ch.provider = 'mock'",
+    );
+    const conv = await tx.query("SELECT 1 FROM conversations v JOIN channels ch ON ch.id = v.channel_id WHERE ch.provider = 'mock'");
+    // Deleting a channel removes its conversations, messages and queued replies (ON DELETE CASCADE).
+    const ch = await tx.query("DELETE FROM channels WHERE provider = 'mock'");
+    await tx.query(
+      'DELETE FROM contacts ct WHERE ct.id = ANY($1::uuid[]) AND NOT EXISTS (SELECT 1 FROM conversations v WHERE v.contact_id = ct.id)',
+      [contacts.rows.map((r) => r.contact_id)],
+    );
+    if (t.rows.length) await tx.query('DELETE FROM tenants WHERE id = ANY($1::uuid[])', [t.rows.map((r) => r.id)]);
+    const result = { mockChannels: ch.rowCount ?? 0, conversations: conv.rowCount ?? 0, sampleWorkspaces: t.rows.map((r) => r.name) };
+    await tx.query(`INSERT INTO audit_events (actor_type, actor_id, action, after, source) VALUES ('user', $1, 'platform.purge_demo_data', $2, 'web')`, [
+      owner.id, JSON.stringify(result),
+    ]);
+    return result;
+  });
+}

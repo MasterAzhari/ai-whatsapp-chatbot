@@ -22,7 +22,7 @@ import { getBotSettings, setCredential, updateBotSettings, VersionConflictError,
 import { getUsageSummary } from '../src/repos/usage.js';
 import { createAiResolver } from '../src/routing/ai-resolver.js';
 import { exportBotTemplate, importBotTemplate } from '../src/repos/template.js';
-import { changeOwnPassword, createAgentWorkspace, listAgentWorkspaces, resetAgentPassword, setAgentDisabled } from '../src/repos/agents.js';
+import { changeOwnName, changeOwnPassword, countDemoData, createAgentWorkspace, listAgentWorkspaces, purgeDemoData, renameWorkspace, resetAgentPassword, setAgentDisabled } from '../src/repos/agents.js';
 import { freshDb } from './helpers.js';
 
 // ------------------------------------------------------------------ pure parts
@@ -681,5 +681,40 @@ describe('agents (owner adds workspaces and logins)', () => {
     await setAgentDisabled(db, owner, siti.userId, false);
     assert.ok(await login(db, 'siti@example.test', 'new-password-123'));
     await assert.rejects(resetAgentPassword(db, owner, owner.id)); // owner account is not an agent
+  });
+
+  test('owner renames a workspace and its address; own display name can change', async () => {
+    const w = (await listAgentWorkspaces(db, owner)).find((x) => x.slug === 'agent-siti-2')!;
+    assert.deepEqual(await renameWorkspace(db, owner, w.tenantId, { workspaceName: 'Team Siti', slug: 'team-siti' }), { slug: 'team-siti' });
+    const after = (await listAgentWorkspaces(db, owner)).find((x) => x.tenantId === w.tenantId)!;
+    assert.deepEqual([after.name, after.slug], ['Team Siti', 'team-siti']);
+    await assert.rejects(renameWorkspace(db, owner, w.tenantId, { workspaceName: 'X', slug: 'agent-siti' })); // taken
+    await assert.rejects(renameWorkspace(db, { ...owner, isPlatformOwner: false }, w.tenantId, { workspaceName: 'X', slug: 'x-x' }));
+    await changeOwnName(db, owner, 'Encik Azhari');
+    const r = await withSystem(db, (tx) => tx.query('SELECT name FROM users WHERE id = $1', [owner.id]));
+    assert.equal(r.rows[0].name, 'Encik Azhari');
+  });
+});
+
+// Runs last: it removes every mock channel, including the ones the tests above use.
+describe('removing sample data', () => {
+  test('mock channels, their chats and sample workspaces go; real QR chats stay', async () => {
+    const owner = { id: (await createUser(db, { email: 'purge@example.test', name: 'P', password: 'password-purge-1', platformOwner: true })), email: 'purge@example.test', name: 'P', isPlatformOwner: true };
+    const tS = await createTenant(db, { slug: 'sample-x', name: 'Contoh X (data sintetik)' });
+    const chS = await createChannel(db, tS, { name: 'mock', provider: 'mock', status: 'connected', automationEnabled: true });
+    await receiveInbound(db, tS, chS, { type: 'message', providerMessageId: randomUUID(), providerIdentity: 'synthetic-1', text: 'hai', timestamp: new Date() });
+    const qrChats = async () => (await withSystem(db, (tx) => tx.query("SELECT count(*)::int AS n FROM conversations v JOIN channels c ON c.id = v.channel_id WHERE c.provider = 'qr'"))).rows[0].n;
+    const before = await qrChats();
+    assert.ok(before > 0);
+    const seen = await countDemoData(db, owner);
+    assert.ok(seen.mockChannels >= 2 && seen.conversations > 0);
+    assert.deepEqual(seen.sampleWorkspaces, ['Contoh X (data sintetik)']);
+    await assert.rejects(purgeDemoData(db, { ...owner, isPlatformOwner: false }));
+    const r = await purgeDemoData(db, owner);
+    assert.equal(r.mockChannels, seen.mockChannels);
+    assert.deepEqual(await countDemoData(db, owner), { mockChannels: 0, conversations: 0, sampleWorkspaces: [] });
+    assert.equal(await qrChats(), before);
+    assert.equal((await withSystem(db, (tx) => tx.query("SELECT 1 FROM tenants WHERE slug = 'sample-x'"))).rowCount, 0);
+    assert.equal((await withSystem(db, (tx) => tx.query('SELECT 1 FROM tenants WHERE id = $1', [tA]))).rowCount, 1); // has a QR channel
   });
 });

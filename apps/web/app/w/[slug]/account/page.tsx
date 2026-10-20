@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { changeOwnPassword } from '@chatbot/core';
+import { changeOwnName, changeOwnPassword } from '@chatbot/core';
 import { actionError, db, requireTenant, requireUser, SESSION_COOKIE } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
@@ -25,11 +25,30 @@ export default async function Account({ params, searchParams }: { params: Promis
     redirect(msg ? `${path}?error=${encodeURIComponent(msg)}` : `${path}?saved=1`);
   }
 
+  async function rename(f: FormData) {
+    'use server';
+    const user = await requireUser();
+    let msg: string | null = null;
+    try {
+      await changeOwnName(db(), user, String(f.get('name') ?? ''));
+    } catch (err) {
+      msg = actionError(err);
+    }
+    redirect(msg ? `${path}?error=${encodeURIComponent(msg)}` : `${path}?saved=name`);
+  }
+
   return (
     <>
       <h1>Akaun</h1>
       {sp.error && <div className="error">{sp.error}</div>}
-      {sp.saved && <div className="notice">Kata laluan ditukar. Sesi lain telah dilog keluar.</div>}
+      {sp.saved === 'name' && <div className="notice">Nama disimpan.</div>}
+      {sp.saved === '1' && <div className="notice">Kata laluan ditukar. Sesi lain telah dilog keluar.</div>}
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <form action={rename} className="form">
+          <label>Nama anda<input name="name" defaultValue={ctx.user.name} required maxLength={200} /></label>
+          <button type="submit">Simpan nama</button>
+        </form>
+      </div>
       <div className="panel">
         <form action={change} className="form">
           <div>{ctx.user.name} · {ctx.user.email}</div>
