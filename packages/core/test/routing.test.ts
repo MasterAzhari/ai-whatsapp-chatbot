@@ -6,7 +6,7 @@ import { withSystem, withTenant } from '../src/db.js';
 import { getSessionUser, login, resolveTenantContext, type SessionUser as SessionUserT, type TenantContext } from '../src/auth.js';
 import { addMembership, createChannel, createTenant, createUser } from '../src/repos/platform.js';
 import { drainOnce } from '../src/outbox.js';
-import { getConversation, takeOver } from '../src/repos/conversations.js';
+import { getConversation, resumeBot, takeOver } from '../src/repos/conversations.js';
 import { MockChannelAdapter } from '../src/channels/mock.js';
 import { MockAIProvider, type AIProvider, type GenerateReplyInput, type GenerateReplyResult } from '../src/ai/provider.js';
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
@@ -268,6 +268,16 @@ describe('routing', () => {
       assert.equal(await routeInbound(db, tA, (await inbound('masih ada promo?', from)).messageId, deps), 'none');
       assert.equal(await routeInbound(db, tA, (await inbound('Saya nak info aircond', from)).messageId, deps), 'keyword');
       assert.equal(await routeInbound(db, tA, (await inbound('ok terima kasih', from)).messageId, deps), 'ai_reply');
+      // turning the bot on by hand for a number that never sent a lead keyword
+      const team = `team-${randomUUID()}`;
+      const t1 = await inbound('bos, esok meeting?', team);
+      assert.equal(await routeInbound(db, tA, t1.messageId, deps), 'none');
+      assert.equal((await getConversation(db, ctxA, t1.conversationId))!.conversation.botState, 'not_lead');
+      await resumeBot(db, ctxA, t1.conversationId);
+      assert.equal((await getConversation(db, ctxA, t1.conversationId))!.conversation.botState, 'on');
+      assert.equal(await routeInbound(db, tA, (await inbound('ok', team)).messageId, deps), 'ai_reply');
+      await takeOver(db, ctxA, t1.conversationId);
+      assert.equal((await getConversation(db, ctxA, t1.conversationId))!.conversation.botState, 'off');
     } finally {
       while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
       await settings({ leadMode: false });

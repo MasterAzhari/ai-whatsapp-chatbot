@@ -4,11 +4,15 @@ import type { Db } from '../db.js';
 import { inTenant, requireRole, type TenantContext } from '../auth.js';
 import { cancelPendingAutomated, enqueueReply } from '../outbox.js';
 import { audit } from './audit.js';
+import { loadSettings } from './settings.js';
+import { leadActive } from '../routing/router.js';
 
 export interface ConversationSummary {
   id: string;
   status: 'open' | 'pending_human' | 'resolved';
   humanTakeover: boolean;
+  /** on: bot answers; off: a person took over; not_lead: lead mode and no active lead window. */
+  botState: 'on' | 'off' | 'not_lead';
   contactName: string | null;
   contactPhone: string | null;
   channelName: string;
@@ -27,6 +31,12 @@ export interface MessageView {
   createdAt: string;
 }
 
+function botState(r: { human_takeover: boolean; lead_started_at: Date | null }, s: { leadMode: boolean; leadDays: number }): ConversationSummary['botState'] {
+  if (r.human_takeover) return 'off';
+  if (s.leadMode && !leadActive(r.lead_started_at, s.leadDays)) return 'not_lead';
+  return 'on';
+}
+
 export const InboxFilter = z.object({
   status: z.enum(['open', 'pending_human', 'resolved']).optional(),
   q: z.string().trim().max(100).optional(),
@@ -36,8 +46,9 @@ export const InboxFilter = z.object({
 export async function listConversations(db: Db, ctx: TenantContext, filter: z.input<typeof InboxFilter> = {}): Promise<ConversationSummary[]> {
   const f = InboxFilter.parse(filter);
   return inTenant(db, ctx, async (tx) => {
+    const settings = await loadSettings(tx, ctx.tenantId);
     const { rows } = await tx.query(
-      `SELECT c.id, c.status, c.human_takeover, ct.display_name, ct.phone_e164, ch.name AS channel_name,
+      `SELECT c.id, c.status, c.human_takeover, c.lead_started_at, ct.display_name, ct.phone_e164, ch.name AS channel_name,
               c.last_message_at,
               (SELECT left(body, 120) FROM messages m WHERE m.conversation_id = c.id AND m.direction <> 'note'
                 ORDER BY created_at DESC LIMIT 1) AS preview
@@ -54,6 +65,7 @@ export async function listConversations(db: Db, ctx: TenantContext, filter: z.in
       id: r.id,
       status: r.status,
       humanTakeover: r.human_takeover,
+      botState: botState(r, settings),
       contactName: r.display_name,
       contactPhone: r.phone_e164,
       channelName: r.channel_name,
@@ -67,13 +79,14 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
   if (!z.string().uuid().safeParse(id).success) return null;
   return inTenant(db, ctx, async (tx) => {
     const c = await tx.query(
-      `SELECT c.id, c.status, c.human_takeover, ct.display_name, ct.phone_e164, ch.name AS channel_name, c.last_message_at
+      `SELECT c.id, c.status, c.human_takeover, c.lead_started_at, ct.display_name, ct.phone_e164, ch.name AS channel_name, c.last_message_at
          FROM conversations c JOIN contacts ct ON ct.id = c.contact_id JOIN channels ch ON ch.id = c.channel_id
         WHERE c.id = $1`,
       [id],
     );
     const r = c.rows[0];
     if (!r) return null;
+    const settings = await loadSettings(tx, ctx.tenantId);
     const m = await tx.query(
       `SELECT id, direction, origin, body, status, status_detail, route, created_at
          FROM messages WHERE conversation_id = $1 ORDER BY created_at, id`,
@@ -84,6 +97,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
         id: r.id,
         status: r.status,
         humanTakeover: r.human_takeover,
+        botState: botState(r, settings),
         contactName: r.display_name,
         contactPhone: r.phone_e164,
         channelName: r.channel_name,
@@ -156,13 +170,16 @@ export async function takeOver(db: Db, ctx: TenantContext, conversationId: strin
   });
 }
 
-/** Explicitly hands the conversation back to automation. */
+/**
+ * Explicitly hands the conversation back to automation. In lead mode this also
+ * starts a new lead window, so the bot serves this number even without a keyword.
+ */
 export async function resumeBot(db: Db, ctx: TenantContext, conversationId: string): Promise<void> {
   requireRole(ctx, 'operator');
   await inTenant(db, ctx, async (tx) => {
     const before = await tx.query('SELECT human_takeover, status FROM conversations WHERE id = $1 FOR UPDATE', [conversationId]);
     if (!before.rows[0]) throw new Error('conversation not found');
-    await tx.query("UPDATE conversations SET human_takeover = false, status = 'open' WHERE id = $1", [conversationId]);
+    await tx.query("UPDATE conversations SET human_takeover = false, status = 'open', lead_started_at = now() WHERE id = $1", [conversationId]);
     await audit(tx, ctx, 'conversation.resume', 'conversation', conversationId, before.rows[0], { human_takeover: false });
   });
 }

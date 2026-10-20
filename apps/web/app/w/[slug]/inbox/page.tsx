@@ -42,7 +42,7 @@ export default async function Inbox({ params, searchParams }: {
             <span className="small muted">{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString('ms-MY', { timeZone: 'Asia/Kuala_Lumpur' }) : ''}</span>
             <span className="small muted">{c.lastMessagePreview}</span>
             <span>
-              {c.humanTakeover && <span className="badge warn">Manusia</span>}{' '}
+              {c.botState === 'on' ? <span className="badge ok">Bot</span> : c.botState === 'off' ? <span className="badge warn">Manusia</span> : <span className="badge">Bukan lead</span>}{' '}
               <span className="badge">{c.status}</span>
             </span>
           </a>

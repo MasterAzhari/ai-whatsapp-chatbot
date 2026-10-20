@@ -36,8 +36,8 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
     'use server';
     const ctx = await requireTenant(slug);
     const cur = await getConversation(db(), ctx, id);
-    if (cur?.conversation.humanTakeover) await resumeBot(db(), ctx, id);
-    else await takeOver(db(), ctx, id);
+    if (cur?.conversation.botState === 'on') await takeOver(db(), ctx, id);
+    else await resumeBot(db(), ctx, id);
     revalidatePath(path);
   }
   async function resolve() {
@@ -53,10 +53,12 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
         <a href={`/w/${slug}/inbox`}>← Inbox</a>
         <h1 style={{ margin: 0 }}>{c.contactName ?? c.contactPhone ?? 'Tanpa nama'}</h1>
         <span className="badge">{c.status}</span>
-        {c.humanTakeover ? <span className="badge warn">Bot dipause (manusia)</span> : <span className="badge ok">Bot aktif</span>}
+        {c.botState === 'on' && <span className="badge ok">Bot hidup untuk nombor ini</span>}
+        {c.botState === 'off' && <span className="badge warn">Bot mati (anda layan)</span>}
+        {c.botState === 'not_lead' && <span className="badge">Bot senyap: bukan lead</span>}
         <span style={{ marginLeft: 'auto' }} />
         <form action={toggleTakeover} className="inline">
-          <button type="submit">{c.humanTakeover ? 'Sambung semula bot' : 'Ambil alih'}</button>
+          <button type="submit" className={c.botState === 'on' ? 'danger' : 'primary'}>{c.botState === 'on' ? 'Matikan bot untuk nombor ini' : 'Hidupkan bot untuk nombor ini'}</button>
         </form>
         {c.status !== 'resolved' && (
           <form action={resolve} className="inline"><button type="submit">Tanda selesai</button></form>
