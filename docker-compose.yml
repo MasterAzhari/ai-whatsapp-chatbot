@@ -23,7 +23,8 @@ services:
     restart: unless-stopped
     environment:
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set GATEWAY_TOKEN in .env}
-      GATEWAY_DRIVER: ${GATEWAY_DRIVER:-mock}
+      GATEWAY_DRIVER: ${GATEWAY_DRIVER:-mock}   # mock | baileys (QR)
+      APP_EVENTS_URL: http://app:3000/api/internal/gateway/events
     volumes:
       - gateway-sessions:/data/sessions
     # No published ports: reachable only from the app over the compose network.

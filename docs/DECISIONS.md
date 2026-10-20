@@ -25,10 +25,11 @@ Choices made while building that the spec left open. Owner decisions are marked
 | 18 | 2026-10-20 | Handover notices are sent with origin `system`, which human takeover does not block; bot answers (keyword, flow, AI) are blocked. | A "staff will reply" notice must still go out after handover. |
 | 19 | 2026-10-20 | Gemini is called directly over REST with the key in the `x-goog-api-key` header; the model is picked in the UI from the API's own model list. No model id hardcoded. | Owner: no n8n; spec: model is configuration. |
 | 20 | 2026-10-20 | Token counts are stored as the provider reports them (null when missing). Cost is shown only as an estimate where `pricing_rates` has a rate; none are seeded. | Spec: never invent usage or prices. |
+| 21 | 2026-10-20 | **Owner:** use Baileys for the QR (linked-device) gateway. Its dependency libsignal is GPL-3.0, so the gateway stays a separate service; if copies of the product are sold for self-hosting, the gateway source is shipped under GPL. Hosted (SaaS) use carries no such obligation. Not legal advice. | Most active QR library; isolation keeps GPL to one small service. |
+| 22 | 2026-10-20 | QR login state stays in the gateway volume (one folder per channel), deleted on unlink. Events are pushed to the app's internal webhook with GATEWAY_TOKEN and retried in memory with backoff. | Session files are credentials; WhatsApp does not redeliver. |
 
 ## Open (not decided; do not invent)
 
 Product name, sales model (shared SaaS vs dedicated), plans and pricing, real
-WhatsApp test number, Gemini model choice, Meta assets, follow-up schedule, MCP
-client and its auth mechanism, QR library (Baileys is the first candidate; licence
-and stability still to be evaluated).
+Gemini model choice, Meta assets, follow-up schedule, MCP
+client and its auth mechanism. The sales model also decides whether the GPL gateway source must be shipped.

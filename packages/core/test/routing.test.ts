@@ -12,7 +12,8 @@ import { MockAIProvider, type AIProvider, type GenerateReplyInput, type Generate
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
 import { decide, routeInbound } from '../src/routing/router.js';
-import { receiveInbound } from '../src/routing/receive.js';
+import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
+import { addQrChannel, connectQrChannel, qrChannelStatus } from '../src/repos/channels.js';
 import { routeOnce } from '../src/worker.js';
 import { simulate } from '../src/routing/playground.js';
 import { createKeywordRule, listKeywordRules, updateKeywordRule } from '../src/repos/keywords.js';
@@ -364,5 +365,34 @@ describe('settings, rules and isolation', () => {
     const afterN = await withTenant(db, tA, (tx) => tx.query('SELECT count(*)::int AS n FROM messages'));
     assert.equal(afterN.rows[0].n, before.rows[0].n);
     assert.ok((await getUsageSummary(db, ctxA)).some((u) => u.source === 'playground'));
+  });
+});
+
+describe('QR channels', () => {
+  const fake = (state: 'pairing' | 'connected') => () => ({
+    getStatus: async () => (state === 'connected' ? { state, displayNumber: '+60100000000' } : { state, qr: 'QR-DATA' }),
+    connect: async () => ({ state: 'pairing' as const, qr: 'QR-DATA' }),
+    disconnect: async () => {},
+  });
+
+  test('admin adds a channel (switches off), connects, status is recorded; other tenant cannot touch it', async () => {
+    const id = await addQrChannel(db, ctxA, 'WhatsApp ujian');
+    const ch = await withTenant(db, tA, (tx) => tx.query('SELECT provider, automation_enabled, ai_enabled FROM channels WHERE id = $1', [id]));
+    assert.deepEqual(ch.rows[0], { provider: 'qr', automation_enabled: false, ai_enabled: false });
+    assert.equal((await connectQrChannel(db, ctxA, id, fake('pairing'))).qr, 'QR-DATA');
+    await qrChannelStatus(db, ctxA, id, fake('connected'));
+    const after = await withTenant(db, tA, (tx) => tx.query('SELECT status, display_number FROM channels WHERE id = $1', [id]));
+    assert.deepEqual(after.rows[0], { status: 'connected', display_number: '+60100000000' });
+    await assert.rejects(qrChannelStatus(db, ctxB, id, fake('connected')), /not found/);
+    await assert.rejects(connectQrChannel(db, ctxA, chA, fake('pairing')), /not found/); // mock channel is not QR
+  });
+
+  test('gateway events land in the right tenant and only for QR channels', async () => {
+    const id = await addQrChannel(db, ctxA, 'QR 2');
+    const ev = { type: 'message', providerMessageId: randomUUID(), providerIdentity: '60123@s.whatsapp.net', text: 'hai', timestamp: new Date().toISOString() };
+    const r = await receiveGatewayEvents(db, { channelId: id, events: [ev] });
+    assert.ok('results' in r && r.results[0]!.kind === 'stored');
+    assert.deepEqual(await receiveGatewayEvents(db, { channelId: chA, events: [ev] }), { error: 'unknown channel', status: 404 });
+    assert.equal(((await receiveGatewayEvents(db, { channelId: id, events: [{ type: 'message' }] })) as any).status, 400);
   });
 });

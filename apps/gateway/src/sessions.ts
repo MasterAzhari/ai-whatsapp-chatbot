@@ -53,6 +53,11 @@ export class SessionManager {
   private readonly sessions = new Map<string, SessionDriver>();
   constructor(private readonly factory: (channelId: string) => SessionDriver) {}
 
+  /** Reconnects sessions that were linked before a restart. */
+  async restore(channelIds: string[]): Promise<void> {
+    for (const id of channelIds) await this.get(id).connect().catch((e) => console.error(`[gateway] restore ${id}: ${(e as Error).message}`));
+  }
+
   get(channelId: string): SessionDriver {
     let s = this.sessions.get(channelId);
     if (!s) {

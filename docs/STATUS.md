@@ -36,14 +36,15 @@ Test run 2026-10-20 (Phase 1): core 21/21, gateway 3/3.
 | API key stored encrypted, shown masked, never audited | Done | test |
 | Website: Keyword, Tetapan bot (key, model picker, switches), Playground (dry run + test customer on MOCK channel), route reason in conversation | Done | Playwright walkthrough: rule created, playground match, mock customer got keyword reply via worker |
 | Internal webhook for gateway events (`/api/internal/gateway/events`, GATEWAY_TOKEN) | Done | builds; used once the QR driver lands |
-| QR driver in the gateway | Not started | library evaluation first; needs a test number |
+| QR driver in the gateway (Baileys 7.0.0-rc14): QR pairing, reconnect with backoff, unlink handling, inbound + delivery status to the app, session restore on restart | Mock only | normaliser tests; driver starts and enters pairing locally; not yet paired with a real phone |
+| Connections page: add QR channel, show QR, status, unlink | Done | Playwright against the mock gateway |
 | Flow state, knowledge snippets | Not started | |
 
-Test run 2026-10-20 (Phase 2): core 47/47, gateway 3/3.
+Test run 2026-10-20 (Phase 2 + QR): core 50/50, gateway 9/9.
 
 ## Next
 
-QR driver (library evaluation), flow state, knowledge. Then Phase 3: official
+Pair the owner's test number on bot.pibot.io and test real messages; then flow state, knowledge. Then Phase 3: official
 Cloud API adapter and authenticated MCP.
 
 ## Needs from the owner (only when we reach that step)

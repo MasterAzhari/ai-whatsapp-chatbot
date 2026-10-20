@@ -24,3 +24,4 @@ export * from './routing/router.js';
 export * from './routing/receive.js';
 export * from './routing/ai-resolver.js';
 export * from './routing/playground.js';
+export * from './repos/channels.js';

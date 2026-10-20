@@ -5,13 +5,15 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/core/package.json packages/core/
 COPY apps/web/package.json apps/web/
 COPY apps/gateway/package.json apps/gateway/
-RUN npm ci --no-audit --no-fund -w @chatbot/gateway
+RUN npm ci --no-audit --no-fund --omit=peer -w @chatbot/gateway
 COPY apps/gateway apps/gateway
-RUN npm run build -w @chatbot/gateway
+RUN npm run build -w @chatbot/gateway \
+ && npm prune --omit=dev --omit=peer -w @chatbot/gateway --no-audit --no-fund
 
 FROM node:22.20.0-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
+COPY --from=build /src/node_modules ./node_modules
 COPY --from=build /src/apps/gateway/dist ./dist
 COPY apps/gateway/package.json ./
 RUN mkdir -p /data/sessions && chown node:node /data/sessions
