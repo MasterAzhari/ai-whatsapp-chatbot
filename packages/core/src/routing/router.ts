@@ -17,10 +17,13 @@ export type Route =
   | { route: 'stop'; reason: string }
   | { route: 'human'; reason: string; reply: string | null }
   | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; setLabel: string | null; handover: boolean; startsLead: boolean }
+  | { route: 'media'; reason: string; reply: string | null }
   | { route: 'ai'; reason: string };
 
 export interface DecisionInput {
   text: string;
+  /** Kinds of media sent with the message (image, audio, video, document, other). */
+  attachments?: string[];
   channelId: string;
   automationEnabled: boolean;
   humanTakeover: boolean;
@@ -37,7 +40,13 @@ export function decide(d: DecisionInput): Route {
   if (!d.automationEnabled) return { route: 'none', reason: 'automasi dimatikan untuk channel ini' };
   if (d.humanTakeover) return { route: 'none', reason: 'manusia sedang mengendalikan perbualan ini' };
   if (d.optedOut) return { route: 'none', reason: 'pelanggan telah berhenti (opt-out)' };
-  if (!d.text.trim()) return { route: 'none', reason: 'tiada teks (lampiran sahaja)' };
+  if (!d.text.trim()) {
+    // Stickers ('other') are treated like an emoji: nothing to answer.
+    const media = (d.attachments ?? []).filter((k) => k !== 'other');
+    if (!media.length) return { route: 'none', reason: 'tiada teks (stiker atau mesej kosong)' };
+    if (d.settings.leadMode && !d.isLead) return { route: 'none', reason: 'lampiran daripada chat bukan lead; staf semak sendiri' };
+    return { route: 'media', reason: `${mediaNames(media)} tanpa teks; minta pelanggan taip, staf perlu semak`, reply: d.settings.mediaReply };
+  }
 
   // Lead mode: until a lead keyword arrives, the bot stays silent and staff answer.
   if (d.settings.leadMode && !d.isLead) {
@@ -56,6 +65,14 @@ export function decide(d: DecisionInput): Route {
   if (!d.aiAllowed) return { route: 'none', reason: 'tiada keyword padan dan AI dimatikan' };
   return { route: 'ai', reason: 'tiada keyword padan' };
 }
+
+const MEDIA_LABEL: Record<string, string> = { audio: 'voice note', image: 'gambar', video: 'video', document: 'fail' };
+function mediaNames(kinds: string[]): string {
+  return [...new Set(kinds.map((k) => MEDIA_LABEL[k] ?? k))].join(', ');
+}
+
+/** Lead sent media the bot cannot read: ask once in a while to type, and flag the chat for staff. */
+const MEDIA_REPLY_COOLDOWN_MIN = 30;
 
 function keywordRoute(rule: KeywordRule, pattern: string): Route {
   return {
@@ -97,7 +114,7 @@ interface Snapshot {
 
 async function loadContext(tx: Tx, messageId: string) {
   const { rows } = await tx.query(
-    `SELECT m.id, m.body, m.direction, m.route, m.conversation_id, m.created_at,
+    `SELECT m.id, m.body, m.attachments, m.direction, m.route, m.conversation_id, m.created_at,
             c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at, c.contact_id, c.channel_id,
             ch.automation_enabled, ch.ai_enabled AS channel_ai,
             ct.opted_out_at IS NOT NULL AS opted_out,
@@ -149,6 +166,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     await tx.query('SELECT 1 FROM conversations WHERE id = $1 FOR UPDATE', [pre.rows[0].conversation_id]);
     const m = await loadContext(tx, messageId);
     if (!m || m.direction !== 'inbound' || m.route) return 'skipped';
+    const attachments = ((m.attachments ?? []) as Array<{ kind: string }>).map((a) => a.kind);
 
     const settings = await loadSettings(tx, tenantId);
     const rules = await loadRules(tx);
@@ -160,6 +178,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     const aiAllowed = settings.aiEnabled && !!settings.aiModel && (m.conv_ai ?? m.channel_ai) === true;
     const d = decide({
       text: m.body ?? '',
+      attachments,
       channelId: m.channel_id,
       automationEnabled: m.automation_enabled,
       humanTakeover: m.human_takeover,
@@ -185,6 +204,22 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover'), delayMs: replyDelayMs(settings) });
         await setRoute(tx, messageId, d);
         return 'human';
+      case 'media': {
+        // Not a takeover: if the customer then types, keywords and AI carry on.
+        await tx.query("UPDATE conversations SET status = 'pending_human' WHERE id = $1", [m.conversation_id]);
+        if (d.reply && !m.superseded) {
+          const recent = await tx.query(
+            `SELECT 1 FROM messages WHERE conversation_id = $1 AND direction = 'outbound' AND origin = 'system' AND body = $2
+               AND created_at > now() - ($3 || ' minutes')::interval LIMIT 1`,
+            [m.conversation_id, d.reply, String(MEDIA_REPLY_COOLDOWN_MIN)],
+          );
+          if (!recent.rowCount) {
+            await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('media'), delayMs: replyDelayMs(settings) });
+          }
+        }
+        await setRoute(tx, messageId, d);
+        return 'media';
+      }
       case 'keyword':
         // Hand over first: the rule's reply then goes out as the handover notice
         // (origin system), which takeover does not block.

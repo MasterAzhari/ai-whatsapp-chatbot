@@ -68,6 +68,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
           aiTimeoutMs: Math.round(Number(f.get('aiTimeoutSec')) * 1000),
           fallbackReply: opt('fallbackReply'),
           handoverReply: opt('handoverReply'),
+          mediaReply: opt('mediaReply'),
           stopKeywords: lines(f.get('stopKeywords')),
           humanKeywords: lines(f.get('humanKeywords')),
           replyDelayMinSec: Number(f.get('replyDelayMinSec')),
@@ -219,6 +220,10 @@ export default async function Settings({ params, searchParams }: { params: Promi
           <label>
             Balasan bila pelanggan minta manusia
             <textarea name="handoverReply" rows={2} maxLength={1000} defaultValue={s.handoverReply ?? ''} />
+          </label>
+          <label>
+            Balasan bila lead hantar voice note, gambar atau video tanpa teks (kosongkan untuk tidak membalas; chat tetap ditanda perlu staf)
+            <textarea name="mediaReply" rows={2} maxLength={1000} defaultValue={s.mediaReply ?? ''} />
           </label>
           <label>Keyword berhenti (mesej tepat, satu setiap baris)<textarea name="stopKeywords" rows={3} defaultValue={s.stopKeywords.join('\n')} /></label>
           <label>Keyword minta manusia (frasa, satu setiap baris)<textarea name="humanKeywords" rows={3} defaultValue={s.humanKeywords.join('\n')} /></label>

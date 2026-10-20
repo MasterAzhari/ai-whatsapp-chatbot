@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 import { runPlayground, sendAsMockCustomer, type PlaygroundState } from './actions';
 
-const ROUTE = { none: 'Tiada balasan automatik', stop: 'Berhenti (opt-out)', human: 'Serah kepada manusia', keyword: 'Keyword', ai: 'AI' } as const;
+const ROUTE = { none: 'Tiada balasan automatik', stop: 'Berhenti (opt-out)', human: 'Serah kepada manusia', keyword: 'Keyword', media: 'Voice/gambar: minta taip', ai: 'AI' } as const;
 
 export function PlaygroundForm({ slug, channels }: { slug: string; channels: Array<{ id: string; name: string; provider: string }> }) {
   const [state, action, pending] = useActionState<PlaygroundState, FormData>(runPlayground, {});

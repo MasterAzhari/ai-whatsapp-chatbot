@@ -6,7 +6,7 @@ import { db, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
 
-const ROUTE = { none: 'tiada balasan', stop: 'berhenti', human: 'serah kepada manusia', keyword: 'keyword', ai: 'AI' } as const;
+const ROUTE = { none: 'tiada balasan', stop: 'berhenti', human: 'serah kepada manusia', keyword: 'keyword', media: 'voice/gambar, minta taip', ai: 'AI' } as const;
 const ORIGIN = { customer: 'Pelanggan', keyword: 'Keyword', flow: 'Flow', ai: 'AI', human: 'Manusia', system: 'Sistem' } as const;
 
 export default async function ConversationPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
@@ -69,6 +69,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
         <div className="thread">
           {messages.map((m) => (
             <div key={m.id} className={`bubble ${m.direction}`}>
+              {m.attachments.length > 0 && <div className="small"><b>📎 {m.attachments.join(', ')}</b> <span className="muted">(buka di WhatsApp telefon)</span></div>}
               {m.body}
               <div className="meta">
                 {ORIGIN[m.origin]} · {new Date(m.createdAt).toLocaleString('ms-MY', { timeZone: 'Asia/Kuala_Lumpur' })}

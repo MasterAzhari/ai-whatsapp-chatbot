@@ -7,6 +7,8 @@ import { audit } from './audit.js';
 import { loadSettings } from './settings.js';
 import { leadActive } from '../routing/router.js';
 
+const MEDIA_LABEL: Record<string, string> = { audio: 'Voice note', image: 'Gambar', video: 'Video', document: 'Fail', other: 'Stiker' };
+
 export interface ConversationSummary {
   id: string;
   status: 'open' | 'pending_human' | 'resolved';
@@ -25,6 +27,8 @@ export interface MessageView {
   direction: 'inbound' | 'outbound' | 'note';
   origin: 'customer' | 'keyword' | 'flow' | 'ai' | 'human' | 'system';
   body: string | null;
+  /** Readable names of media sent with the message, e.g. "Voice note". */
+  attachments: string[];
   status: string;
   statusDetail: string | null;
   route: { route: string; reason: string } | null; // why an inbound message was (not) answered
@@ -50,7 +54,8 @@ export async function listConversations(db: Db, ctx: TenantContext, filter: z.in
     const { rows } = await tx.query(
       `SELECT c.id, c.status, c.human_takeover, c.lead_started_at, ct.display_name, ct.phone_e164, ch.name AS channel_name,
               c.last_message_at,
-              (SELECT left(body, 120) FROM messages m WHERE m.conversation_id = c.id AND m.direction <> 'note'
+              (SELECT coalesce(left(body, 120), '[' || (attachments->0->>'kind') || ']') FROM messages m
+                WHERE m.conversation_id = c.id AND m.direction <> 'note'
                 ORDER BY created_at DESC LIMIT 1) AS preview
          FROM conversations c
          JOIN contacts ct ON ct.id = c.contact_id
@@ -70,7 +75,7 @@ export async function listConversations(db: Db, ctx: TenantContext, filter: z.in
       contactPhone: r.phone_e164,
       channelName: r.channel_name,
       lastMessageAt: r.last_message_at?.toISOString() ?? null,
-      lastMessagePreview: r.preview,
+      lastMessagePreview: r.preview?.replace(/^\[(\w+)\]$/, (_: string, k: string) => `[${MEDIA_LABEL[k] ?? 'Lampiran'}]`) ?? null,
     }));
   });
 }
@@ -88,7 +93,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
     if (!r) return null;
     const settings = await loadSettings(tx, ctx.tenantId);
     const m = await tx.query(
-      `SELECT id, direction, origin, body, status, status_detail, route, created_at
+      `SELECT id, direction, origin, body, attachments, status, status_detail, route, created_at
          FROM messages WHERE conversation_id = $1 ORDER BY created_at, id`,
       [id],
     );
@@ -109,6 +114,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
         direction: x.direction,
         origin: x.origin,
         body: x.body,
+        attachments: ((x.attachments ?? []) as Array<{ kind: string }>).map((a) => MEDIA_LABEL[a.kind] ?? 'Lampiran'),
         status: x.status,
         statusDetail: x.status_detail,
         route: x.route,

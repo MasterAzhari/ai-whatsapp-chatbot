@@ -60,7 +60,7 @@ describe('matcher', () => {
 const baseSettings: BotSettings = {
   version: 1, personaName: 'Bot', language: 'ms', systemInstruction: '', aiEnabled: true, aiProvider: 'gemini',
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
-  fallbackReply: null, handoverReply: 'Staf akan balas', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
+  fallbackReply: null, handoverReply: 'Staf akan balas', mediaReply: 'Sila taip', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
   replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false, leadMode: false, leadDays: 30,
 };
 
@@ -83,6 +83,16 @@ describe('decide order', () => {
     assert.ok(lead.route === 'keyword' && lead.startsLead);
     assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'harga' }).route, 'keyword');
     assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'hello' }).route, 'ai');
+  });
+  test('voice, picture or video without text: ask to type, but only for leads; stickers ignored', () => {
+    const leadMode = { ...baseSettings, leadMode: true };
+    const voice = d({ text: '', attachments: ['audio'] });
+    assert.ok(voice.route === 'media' && voice.reply === 'Sila taip');
+    assert.equal(d({ text: '', attachments: ['other'] }).route, 'none');
+    assert.equal(d({ text: '', attachments: ['image'], settings: leadMode }).route, 'none');
+    assert.equal(d({ text: '', attachments: ['image'], settings: leadMode, isLead: true }).route, 'media');
+    assert.equal(d({ text: 'harga', attachments: ['image'] }).route, 'keyword'); // a caption is read as text
+    assert.equal(d({ text: '', attachments: ['video'], humanTakeover: true }).route, 'none');
   });
   test('lead window', () => {
     const now = new Date('2026-10-20T00:00:00Z');
@@ -207,8 +217,8 @@ class ScriptedAI implements AIProvider {
   }
 }
 
-async function inbound(text: string, from = `cust-${randomUUID()}`) {
-  const r = await receiveInbound(db, tA, chA, { type: 'message', providerMessageId: randomUUID(), providerIdentity: from, text, timestamp: new Date() });
+async function inbound(text: string, from = `cust-${randomUUID()}`, attachments?: Array<{ kind: 'image' | 'audio' | 'video' | 'document' | 'other' }>) {
+  const r = await receiveInbound(db, tA, chA, { type: 'message', providerMessageId: randomUUID(), providerIdentity: from, text: text || undefined, attachments, timestamp: new Date() });
   assert.equal(r.kind, 'stored');
   return r as { kind: 'stored'; messageId: string; conversationId: string };
 }
@@ -283,6 +293,21 @@ describe('routing', () => {
       await settings({ leadMode: false });
       await updateKeywordRule(db, ctxA, lead.id, lead.version, { name: 'Lead aircond', matchType: 'phrase', patterns: ['saya nak info aircond'], replyText: 'x', enabled: false });
     }
+  });
+
+  test('voice note: one polite reply per 30 minutes, chat flagged for staff, bot stays on', async () => {
+    const from = `voice-${randomUUID()}`;
+    const v1 = await inbound('', from, [{ kind: 'audio' }]);
+    assert.equal(await routeInbound(db, tA, v1.messageId, deps), 'media');
+    assert.equal(await routeInbound(db, tA, (await inbound('', from, [{ kind: 'image' }])).messageId, deps), 'media');
+    const c = await getConversation(db, ctxA, v1.conversationId);
+    assert.equal(c!.conversation.status, 'pending_human');
+    assert.equal(c!.conversation.botState, 'on');
+    assert.deepEqual(c!.messages[0]!.attachments, ['Voice note']);
+    assert.equal((await outbound(v1.conversationId)).filter((o) => o.origin === 'system').length, 1);
+    assert.equal(ai.calls, 0);
+    assert.equal(await routeInbound(db, tA, (await inbound('harga', from)).messageId, deps), 'keyword');
+    while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
   });
 
   test('keyword reply is queued once even if routed twice, and sent', async () => {

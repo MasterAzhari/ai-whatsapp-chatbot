@@ -25,6 +25,7 @@ export interface BotSettings {
   aiTimeoutMs: number;
   fallbackReply: string | null;
   handoverReply: string | null;
+  mediaReply: string | null;
   stopKeywords: string[];
   humanKeywords: string[];
   replyDelayMinSec: number;
@@ -49,6 +50,7 @@ function fromRow(r: Record<string, any>): BotSettings {
     aiTimeoutMs: r.ai_timeout_ms,
     fallbackReply: r.fallback_reply,
     handoverReply: r.handover_reply,
+    mediaReply: r.media_reply,
     stopKeywords: r.stop_keywords,
     humanKeywords: r.human_keywords,
     replyDelayMinSec: r.reply_delay_min_sec,
@@ -98,6 +100,7 @@ export const SettingsUpdate = z.object({
   aiTimeoutMs: z.number().int().min(1000).max(120000).optional(),
   fallbackReply: z.string().trim().max(1000).nullable().optional(),
   handoverReply: z.string().trim().max(1000).nullable().optional(),
+  mediaReply: z.string().trim().max(1000).nullable().optional(),
   stopKeywords: keywordList.optional(),
   humanKeywords: keywordList.optional(),
   replyDelayMinSec: z.number().int().min(0).max(120).optional(),
@@ -120,6 +123,7 @@ export const SETTINGS_COLUMNS: Record<string, string> = {
   aiTimeoutMs: 'ai_timeout_ms',
   fallbackReply: 'fallback_reply',
   handoverReply: 'handover_reply',
+  mediaReply: 'media_reply',
   stopKeywords: 'stop_keywords',
   humanKeywords: 'human_keywords',
   replyDelayMinSec: 'reply_delay_min_sec',
