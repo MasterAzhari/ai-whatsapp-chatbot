@@ -355,6 +355,21 @@ describe('routing', () => {
     while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
   });
 
+  test('IC picture: bot copies nothing from it, hands the chat to staff', async () => {
+    const pic = [{ kind: 'image' as const, mimeType: 'image/jpeg', data: Buffer.from('fake-jpeg').toString('base64') }];
+    const v = await inbound('', `ic-${randomUUID()}`, pic);
+    ai.result = { ok: true, text: '[dokumen pengenalan]', usage: { inputTokens: 50, outputTokens: 4 }, model: 'gemini-test', latencyMs: 5 };
+    assert.equal(await routeInbound(db, tA, v.messageId, deps), 'human');
+    const c = await getConversation(db, ctxA, v.conversationId);
+    assert.match(c!.messages[0]!.body ?? '', /Gambar IC diterima/);
+    assert.equal(c!.conversation.status, 'pending_human');
+    assert.equal((await outbound(v.conversationId)).filter((o) => o.origin === 'system').length, 1);
+    const left = await withTenant(db, tA, (tx) => tx.query('SELECT 1 FROM message_media WHERE message_id = $1', [v.messageId]));
+    assert.equal(left.rowCount, 0);
+    ai.result = { ok: true, text: 'ok', usage: { inputTokens: 1, outputTokens: 1 }, model: 'gemini-test', latencyMs: 1 };
+    while ((await routeOnce(db, deps)) > 0);
+  });
+
   test('voice note is turned into text, then answered like a typed message; bytes are not kept', async () => {
     const bytes = Buffer.from('fake-opus '.repeat(40)); // longer than one 76-char base64 line
     const voice = [{ kind: 'audio' as const, mimeType: 'audio/ogg; codecs=opus', data: bytes.toString('base64') }];

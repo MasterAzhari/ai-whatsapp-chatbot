@@ -177,6 +177,10 @@ async function mediaFallback(tx: Tx, tenantId: string, conversationId: string, m
   await setRoute(tx, messageId, { route: 'media', ...route });
 }
 
+const ID_DOCUMENT = /\[\s*dokumen pengenalan\s*\]/i;
+const ID_DOCUMENT_BODY = '🪪 [Gambar IC diterima. Tidak dibaca oleh bot; staf semak dalam WhatsApp.]';
+const ID_DOCUMENT_REPLY = 'Terima kasih Cik, gambar IC dah diterima. Team Encik Azhari akan semak dan hubungi Cik di sini ya.';
+
 const READ_MEDIA = {
   audio: {
     system:
@@ -186,7 +190,7 @@ const READ_MEDIA = {
   },
   image: {
     system:
-      'A customer sent this picture to a sales team on WhatsApp. In Malay, describe in at most 3 sentences what it shows, copying any readable text, numbers or amounts that matter. No advice and no commentary.',
+      'A customer sent this picture to a sales team on WhatsApp. If it shows an identity card, passport or similar ID document (front or back, even watermarked), reply exactly: [dokumen pengenalan] and copy nothing from it. Otherwise, in Malay, describe in at most 3 sentences what it shows, copying any readable text, numbers or amounts that matter. No advice and no commentary.',
     prompt: 'Gambar daripada pelanggan.',
     toBody: (t: string) => `🖼️ [Gambar: ${t}]`,
   },
@@ -236,6 +240,19 @@ async function readMedia(db: Db, tenantId: string, messageId: string, t: Transcr
     );
     const m = await loadContext(tx, messageId);
     if (!m || m.route) return 'skipped';
+    if (usable && t.kind === 'image' && ID_DOCUMENT.test(text)) {
+      // IC pictures go to staff for the eligibility check; their details are never kept as text.
+      await tx.query('UPDATE messages SET body = $2 WHERE id = $1', [messageId, ID_DOCUMENT_BODY]);
+      await tx.query('DELETE FROM message_media WHERE message_id = $1', [messageId]);
+      const first = !(await tx.query('SELECT human_takeover FROM conversations WHERE id = $1', [t.conversationId])).rows[0]?.human_takeover;
+      await handOver(tx, t.conversationId);
+      if (first && !m.superseded) {
+        await enqueueReply(tx, { tenantId, conversationId: t.conversationId, text: ID_DOCUMENT_REPLY, origin: 'system', idempotencyKey: `idoc:${messageId}`, delayMs: replyDelayMs(s) });
+      }
+      await notifyStaff(tx, tenantId, t.conversationId, 'Customer sent an IC picture', `notify:${messageId}`);
+      await setRoute(tx, messageId, { route: 'human', reason: 'IC picture received; handed to staff (not read by the bot)' });
+      return 'human';
+    }
     if (usable) {
       await tx.query('UPDATE messages SET body = $2 WHERE id = $1', [messageId, how.toBody(text).slice(0, 4000)]);
       await tx.query('DELETE FROM message_media WHERE message_id = $1', [messageId]);
