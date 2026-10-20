@@ -1,11 +1,13 @@
 import type { Tx } from './db.js';
 import type { DeliveryStatusEvent, InboundMessageEvent, NormalizedEvent } from './channels/adapter.js';
+import { cancelPendingAutomated } from './outbox.js';
 
 export type IngestResult =
   | { kind: 'stored'; messageId: string; conversationId: string; contactId: string }
   | { kind: 'duplicate'; messageId: string }
   | { kind: 'ignored'; reason: string }
-  | { kind: 'status'; matched: boolean };
+  | { kind: 'status'; matched: boolean }
+  | { kind: 'human_reply'; messageId: string; conversationId: string };
 
 /**
  * Stores one normalised provider event durably. Must run inside withTenant for the
@@ -15,10 +17,10 @@ export type IngestResult =
  */
 export async function ingestEvent(tx: Tx, tenantId: string, channelId: string, ev: NormalizedEvent): Promise<IngestResult> {
   if (ev.type === 'status') return applyStatus(tx, tenantId, channelId, ev);
-  if (ev.fromMe) return { kind: 'ignored', reason: 'own message' };
   if (ev.isGroup) return { kind: 'ignored', reason: 'group chats not supported' };
   if (ev.isHistoryReplay) return { kind: 'ignored', reason: 'history replay' };
   if (!ev.providerMessageId) return { kind: 'ignored', reason: 'missing provider message id' };
+  if (ev.fromMe) return recordPhoneReply(tx, tenantId, channelId, ev);
 
   const dup = await tx.query<{ id: string }>(
     'SELECT id FROM messages WHERE channel_id = $1 AND provider_message_id = $2',
@@ -57,6 +59,39 @@ export async function ingestEvent(tx: Tx, tenantId: string, channelId: string, e
   }
   await tx.query('UPDATE contacts SET last_inbound_at = greatest(last_inbound_at, $2) WHERE id = $1', [contactId, ev.timestamp]);
   return { kind: 'stored', messageId: msg.rows[0].id, conversationId, contactId };
+}
+
+/**
+ * A message the business sent from its own WhatsApp (the phone or WhatsApp Web), not
+ * through this system: a person is answering, so it is stored as a human reply and
+ * the bot stands down for that conversation. Replies this system sent itself are
+ * filtered out by the gateway, and matched here by provider id as a second guard.
+ */
+async function recordPhoneReply(tx: Tx, tenantId: string, channelId: string, ev: InboundMessageEvent): Promise<IngestResult> {
+  const own = await tx.query<{ id: string }>('SELECT id FROM messages WHERE channel_id = $1 AND provider_message_id = $2', [channelId, ev.providerMessageId]);
+  if (own.rows[0]) return { kind: 'duplicate', messageId: own.rows[0].id };
+  const contactId = await resolveContact(tx, tenantId, channelId, { ...ev, profileName: undefined });
+  const conv = await tx.query<{ id: string }>(
+    `INSERT INTO conversations (tenant_id, channel_id, contact_id, last_message_at, human_takeover, status)
+     VALUES ($1, $2, $3, $4, true, 'pending_human')
+     ON CONFLICT (channel_id, contact_id) DO UPDATE
+       SET last_message_at = greatest(conversations.last_message_at, EXCLUDED.last_message_at),
+           human_takeover = true, status = 'pending_human'
+     RETURNING id`,
+    [tenantId, channelId, contactId, ev.timestamp],
+  );
+  const conversationId = conv.rows[0]!.id;
+  const msg = await tx.query<{ id: string }>(
+    `INSERT INTO messages (tenant_id, conversation_id, channel_id, direction, origin, body, attachments,
+                           provider_message_id, status, provider_timestamp)
+     VALUES ($1, $2, $3, 'outbound', 'human', $4, $5, $6, 'sent', $7)
+     ON CONFLICT (channel_id, provider_message_id) WHERE provider_message_id IS NOT NULL DO NOTHING
+     RETURNING id`,
+    [tenantId, conversationId, channelId, ev.text ?? null, JSON.stringify(ev.attachments ?? []), ev.providerMessageId, ev.timestamp],
+  );
+  if (!msg.rows[0]) return { kind: 'ignored', reason: 'already stored' };
+  await cancelPendingAutomated(tx, conversationId);
+  return { kind: 'human_reply', messageId: msg.rows[0].id, conversationId };
 }
 
 async function resolveContact(tx: Tx, tenantId: string, channelId: string, ev: InboundMessageEvent): Promise<string> {

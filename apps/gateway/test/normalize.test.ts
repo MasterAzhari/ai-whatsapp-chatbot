@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeMessage, normalizeStatus, phoneFromJid } from '../src/normalize.js';
+import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid } from '../src/normalize.js';
 
 const key = (o: Record<string, unknown> = {}) => ({ remoteJid: '60123456789@s.whatsapp.net', id: 'ABC', fromMe: false, ...o });
 
@@ -45,4 +45,12 @@ test('delivery statuses for our own messages only', () => {
 test('phoneFromJid ignores device suffix and non-phone ids', () => {
   assert.equal(phoneFromJid('60123456789:12@s.whatsapp.net'), '+60123456789');
   assert.equal(phoneFromJid('123@lid'), undefined);
+});
+
+test('only recent messages from the business phone count as live', () => {
+  const now = new Date('2026-10-20T10:00:00Z');
+  const at = (sec: number, fromMe = true) => ({ key: key({ fromMe }), messageTimestamp: now.getTime() / 1000 - sec, message: { conversation: 'x' } });
+  assert.equal(isLiveOwnMessage(at(10) as any, now), true);
+  assert.equal(isLiveOwnMessage(at(600) as any, now), false);
+  assert.equal(isLiveOwnMessage(at(10, false) as any, now), false);
 });

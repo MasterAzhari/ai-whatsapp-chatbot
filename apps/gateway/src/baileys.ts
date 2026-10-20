@@ -1,8 +1,8 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState, type WASocket } from 'baileys';
+import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, generateMessageIDV2, useMultiFileAuthState, type WASocket } from 'baileys';
 import type { InboundSink, SessionDriver } from './sessions.js';
-import { normalizeMessage, normalizeStatus, phoneFromJid, type GatewayEvent } from './normalize.js';
+import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid, type GatewayEvent } from './normalize.js';
 
 type State = ReturnType<SessionDriver['status']>;
 
@@ -27,6 +27,8 @@ export class BaileysSessionDriver implements SessionDriver {
   private stopped = true;
   private retries = 0;
   private readonly sentByKey = new Map<string, string>();
+  /** Ids of messages this gateway sent, so their echoes are not mistaken for a person typing on the phone. */
+  private readonly ownIds = new Set<string>();
 
   constructor(
     private readonly channelId: string,
@@ -88,7 +90,11 @@ export class BaileysSessionDriver implements SessionDriver {
       }
     });
     sock.ev.on('messages.upsert', ({ messages, type }) => {
-      const events = messages.map((m) => normalizeMessage(m as any, type !== 'notify')).filter((e): e is GatewayEvent => !!e);
+      const events = messages
+        .filter((m) => !(m.key.fromMe && m.key.id && this.ownIds.has(m.key.id)))
+        // Messages typed on the business phone may arrive as 'append'; recent ones are live, not history.
+        .map((m) => normalizeMessage(m as any, type !== 'notify' && !isLiveOwnMessage(m as any)))
+        .filter((e): e is GatewayEvent => !!e);
       if (events.length) void this.sink(this.channelId, events);
     });
     sock.ev.on('messages.update', (updates) => {
@@ -122,8 +128,12 @@ export class BaileysSessionDriver implements SessionDriver {
       await this.sock?.sendPresenceUpdate('paused', to).catch(() => {});
       if (!this.sock || this.state.state !== 'connected') throw Object.assign(new Error('session not connected'), { status: 409 });
     }
-    const sent = await this.sock.sendMessage(to, { text });
+    const ownId = generateMessageIDV2(this.sock.user?.id);
+    this.ownIds.add(ownId);
+    if (this.ownIds.size > 5000) this.ownIds.delete(this.ownIds.values().next().value!);
+    const sent = await this.sock.sendMessage(to, { text }, { messageId: ownId });
     const id = sent?.key.id;
+    if (id) this.ownIds.add(id);
     if (!id) throw new Error('WhatsApp did not return a message id');
     this.sentByKey.set(idempotencyKey, id);
     if (this.sentByKey.size > 5000) this.sentByKey.delete(this.sentByKey.keys().next().value!);

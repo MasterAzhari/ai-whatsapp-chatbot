@@ -61,6 +61,12 @@ function unwrap(m: Record<string, any> | null | undefined): Record<string, any> 
   return cur;
 }
 
+/** A message sent from the business's own phone within the last two minutes. */
+export function isLiveOwnMessage(raw: RawMessage, now = new Date()): boolean {
+  const ts = seconds(raw.messageTimestamp);
+  return !!raw.key.fromMe && !!ts && now.getTime() - ts * 1000 < 120_000;
+}
+
 export function normalizeMessage(raw: RawMessage, history: boolean, now = new Date()): GatewayEvent | null {
   const jid = raw.key.remoteJid ?? '';
   if (!jid || !raw.key.id || isBroadcast(jid)) return null;

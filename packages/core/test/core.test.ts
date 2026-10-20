@@ -123,13 +123,36 @@ describe('inbound', () => {
     assert.equal(results.filter((r) => r.kind === 'stored').length, 1);
   });
 
-  test('own messages, groups and history replay are ignored', async () => {
-    for (const flag of [{ fromMe: true }, { isGroup: true }, { isHistoryReplay: true }]) {
+  test('groups and history replay are ignored', async () => {
+    for (const flag of [{ isGroup: true }, { isHistoryReplay: true }, { fromMe: true, isHistoryReplay: true }]) {
       const r = await withTenant(db, tA, (tx) =>
         ingestEvent(tx, tA, chA, { type: 'message', providerMessageId: randomUUID(), providerIdentity: 'x', text: 'x', timestamp: new Date(), ...flag }),
       );
       assert.equal(r.kind, 'ignored');
     }
+  });
+
+  test('a reply typed on the business phone hands the chat to a human and cancels queued bot replies', async () => {
+    const r = await inbound(tA, chA, 'phone-cust', 'harga?');
+    assert.equal(r.kind, 'stored');
+    if (r.kind !== 'stored') return;
+    const queued = await withTenant(db, tA, (tx) =>
+      enqueueReply(tx, { tenantId: tA, conversationId: r.conversationId, text: 'bot', origin: 'ai', idempotencyKey: randomUUID(), delayMs: 60_000 }),
+    );
+    const id = randomUUID();
+    const ev = { type: 'message' as const, providerMessageId: id, providerIdentity: 'phone-cust', text: 'Saya staf, saya bantu ya', timestamp: new Date(), fromMe: true };
+    const h = await withTenant(db, tA, (tx) => ingestEvent(tx, tA, chA, ev));
+    assert.equal(h.kind, 'human_reply');
+    const row = await withTenant(db, tA, async (tx) => ({
+      conv: (await tx.query('SELECT human_takeover, status FROM conversations WHERE id = $1', [r.conversationId])).rows[0],
+      msg: (await tx.query('SELECT direction, origin FROM messages WHERE provider_message_id = $1', [id])).rows[0],
+      bot: (await tx.query('SELECT state FROM outbox WHERE message_id = $1', [queued.messageId])).rows[0],
+    }));
+    assert.deepEqual(row.conv, { human_takeover: true, status: 'pending_human' });
+    assert.deepEqual(row.msg, { direction: 'outbound', origin: 'human' });
+    assert.equal(row.bot.state, 'cancelled');
+    // the same event again, or the echo of a reply this system sent, changes nothing
+    assert.equal((await withTenant(db, tA, (tx) => ingestEvent(tx, tA, chA, ev))).kind, 'duplicate');
   });
 
   test('delivery status never moves backwards', async () => {
