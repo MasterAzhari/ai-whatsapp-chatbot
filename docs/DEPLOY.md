@@ -10,16 +10,16 @@ The chatbot runs as a **separate compose project** so the existing file is never
 ## First deploy
 
 1. DNS: `bot.pibot.io` already resolves to the VPS.
-2. Copy the repo to `/opt/chatbot` and create `/opt/chatbot/.env` from `.env.example`
+2. Copy the repo to `/opt/chatbot` (from Windows use `git -c core.autocrlf=false archive`, or files arrive with CRLF line endings) and create `/opt/chatbot/.env` from `.env.example`
    (chmod 600). Generate every secret with `openssl rand -base64 32`. Keep
    `APP_ENCRYPTION_KEY` somewhere off the server as well.
 3. Check the label names caddy-gen expects by comparing with an existing service:
-   `docker inspect typebot-builder --format '{{json .Config.Labels}}'`, and adjust
+   `docker inspect root-typebot-builder-1 --format '{{json .Config.Labels}}'`, and adjust
    `deploy/pibot/docker-compose.yml` if they differ.
 4. Create the database and its non-superuser role in `typebot-db`:
    ```sh
    set -a; . /opt/chatbot/.env; set +a
-   docker exec -i typebot-db psql -U <typebot-db admin user> -v pw="$POSTGRES_PASSWORD" < deploy/pibot/create-db.sql
+   docker exec -i root-typebot-db-1 psql -U postgres -v pw="$POSTGRES_PASSWORD" < deploy/pibot/create-db.sql
    ```
 5. Start it:
    ```sh
@@ -36,6 +36,9 @@ The chatbot runs as a **separate compose project** so the existing file is never
    ```
 7. Check `https://bot.pibot.io/api/health` returns `{"ok":true}`.
 
+Container names on this VPS are `root-<service>-1` (e.g. `root-typebot-db-1`); the
+service name `typebot-db` still resolves on `root_default`, so `DATABASE_URL` uses it.
+
 ## Update / rollback
 
 ```sh
@@ -48,6 +51,6 @@ forward-only; a release that needs a schema rollback ships its own down migratio
 ## Backups
 
 The chatbot database lives in `typebot-db`, so include it explicitly:
-`docker exec typebot-db pg_dump -U chatbot -Fc chatbot > chatbot-$(date +%F).dump`.
+`docker exec root-typebot-db-1 pg_dump -U chatbot -Fc chatbot > chatbot-$(date +%F).dump`.
 The gateway session volume (`chatbot_gateway-sessions`) holds WhatsApp login state;
 treat it as secret. A restore drill into a test database is part of Phase 4.

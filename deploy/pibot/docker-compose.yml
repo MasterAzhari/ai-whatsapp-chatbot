@@ -18,6 +18,9 @@ services:
       virtual.host: ${APP_HOST:-bot.pibot.io}
       virtual.port: "3000"
       virtual.tls-email: ${TLS_EMAIL:?set TLS_EMAIL}
+      # caddy-gen adds an upstream per network; the "internal" IP is unreachable from
+      # caddy, so health-check upstreams and retry so only the root_default IP is used.
+      virtual.proxy.directives: "health_uri /api/health\nhealth_interval 10s\nlb_try_duration 5s"
     networks: [root_default, internal]
     depends_on:
       gateway: { condition: service_healthy }

@@ -18,8 +18,8 @@ not proven live), **Not started**.
 | Website: login, workspace picker, dashboard, inbox, conversation, connections | Done | Playwright walkthrough against local build |
 | whatsapp-gateway service with internal token auth | Mock only | gateway tests; no real WhatsApp session |
 | AI provider contract | Mock only | Gemini adapter is Phase 2 |
-| Docker images + compose (standalone and pibot) | Written, **not built here** | No Docker daemon in the build environment; app supervisor tested locally (start, health, clean SIGTERM) |
-| Deployment to pibot.io | Not started | Needs owner go-ahead |
+| Docker images + compose (pibot) | Done | Built and running on the VPS 2026-10-20; standalone compose not yet run |
+| Deployment to pibot.io | Done (mock WhatsApp) | https://bot.pibot.io/api/health ok; existing services unaffected |
 
 Test run 2026-10-20: core 21/21, gateway 3/3.
 
