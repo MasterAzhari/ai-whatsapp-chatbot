@@ -192,6 +192,26 @@ describe('gemini adapter', () => {
     assert.equal(((await g(resp(404, {}))) as any).reason, 'invalid_model');
     assert.equal(((await g(resp(200, { promptFeedback: { blockReason: 'SAFETY' } }))) as any).reason, 'blocked');
   });
+  test('asks Gemini 3 models for minimal thinking, and retries without it if refused', async () => {
+    const bodies: any[] = [];
+    const f = (refuse: boolean) => (async (_url: string, init: RequestInit) => {
+      const b = JSON.parse(String(init.body));
+      bodies.push(b);
+      if (refuse && b.generationConfig.thinkingConfig) return new Response(JSON.stringify({ error: { message: 'Thinking level is not supported for this model.' } }), { status: 400 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Hai!' }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3, thoughtsTokenCount: 7 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await new GeminiProvider('k-123456789', f(false), 'https://x.test').generateReply({ ...input, model: 'gemini-3.5-flash-lite' });
+    assert.deepEqual(bodies[0].generationConfig.thinkingConfig, { thinkingLevel: 'minimal' });
+    assert.deepEqual((r as any).usage, { inputTokens: 10, outputTokens: 10 });
+    bodies.length = 0;
+    const r2 = await new GeminiProvider('k-123456789', f(true), 'https://x.test').generateReply({ ...input, model: 'gemini-3.5-flash-lite' });
+    assert.equal(r2.ok, true);
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[1].generationConfig.thinkingConfig, undefined);
+    bodies.length = 0;
+    await new GeminiProvider('k-123456789', f(false), 'https://x.test').generateReply({ ...input, model: 'gemini-2.5-flash-lite' });
+    assert.equal(bodies[0].generationConfig.thinkingConfig, undefined);
+  });
   test('rejects odd model ids without calling out', async () => {
     let called = false;
     const f = (async () => { called = true; return new Response('{}'); }) as unknown as typeof fetch;

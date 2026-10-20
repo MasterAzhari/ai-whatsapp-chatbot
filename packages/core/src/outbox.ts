@@ -34,8 +34,9 @@ export async function enqueueReply(tx: Tx, input: EnqueueReplyInput): Promise<{ 
   const channelId = conv.rows[0].channel_id;
 
   const msg = await tx.query<{ id: string }>(
-    `INSERT INTO messages (tenant_id, conversation_id, channel_id, direction, origin, body, status, author_user_id, image_asset_id)
-     VALUES ($1, $2, $3, 'outbound', $4, $5, 'queued', $6, $7) RETURNING id`,
+    // clock_timestamp, not now(): bubbles queued in one transaction must keep their order in the chat.
+    `INSERT INTO messages (tenant_id, conversation_id, channel_id, direction, origin, body, status, author_user_id, image_asset_id, created_at)
+     VALUES ($1, $2, $3, 'outbound', $4, $5, 'queued', $6, $7, clock_timestamp()) RETURNING id`,
     [input.tenantId, input.conversationId, channelId, input.origin, input.text || null, input.authorUserId ?? null, input.imageAssetId ?? null],
   );
   const messageId = msg.rows[0]!.id;
@@ -126,9 +127,11 @@ export async function claimDue(db: Db, limit = 20): Promise<OutboxJob[]> {
               updated_at = now()
         WHERE id IN (SELECT id FROM outbox WHERE state = 'pending' AND next_attempt_at <= now()
                       ORDER BY next_attempt_at LIMIT $1 FOR UPDATE SKIP LOCKED)
-        RETURNING id, tenant_id, channel_id, conversation_id, message_id, idempotency_key, attempts, max_attempts`,
+        RETURNING id, tenant_id, channel_id, conversation_id, message_id, idempotency_key, attempts, max_attempts, next_attempt_at`,
       [limit, String(LEASE_MS)],
     );
+    // RETURNING does not keep the subquery's order; bubbles of one reply must go out in order.
+    rows.sort((a, b) => a.next_attempt_at.getTime() - b.next_attempt_at.getTime());
     return rows.map((r) => ({
       id: r.id,
       tenantId: r.tenant_id,
