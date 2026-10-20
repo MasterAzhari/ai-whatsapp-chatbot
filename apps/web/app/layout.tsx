@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import './globals.css';
 
-export const metadata = { title: 'Chatbot Admin', robots: { index: false } };
+export const metadata = { title: 'MasterBot', robots: { index: false } };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

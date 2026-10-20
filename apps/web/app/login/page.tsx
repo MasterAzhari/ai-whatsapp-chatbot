@@ -24,6 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { error } = await searchParams;
   return (
     <form action={doLogin} className="login">
+      <div className="brand">MasterBot</div>
       <h1>Log masuk</h1>
       {error && <div className="error">Email atau kata laluan salah.</div>}
       <label>

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../src/db.js';
 import { withSystem, withTenant } from '../src/db.js';
-import { getSessionUser, login, resolveTenantContext, type TenantContext } from '../src/auth.js';
+import { getSessionUser, login, resolveTenantContext, type SessionUser as SessionUserT, type TenantContext } from '../src/auth.js';
 import { addMembership, createChannel, createTenant, createUser } from '../src/repos/platform.js';
 import { drainOnce } from '../src/outbox.js';
 import { getConversation, takeOver } from '../src/repos/conversations.js';
@@ -22,6 +22,7 @@ import { getBotSettings, setCredential, updateBotSettings, VersionConflictError,
 import { getUsageSummary } from '../src/repos/usage.js';
 import { createAiResolver } from '../src/routing/ai-resolver.js';
 import { exportBotTemplate, importBotTemplate } from '../src/repos/template.js';
+import { changeOwnPassword, createAgentWorkspace, listAgentWorkspaces, resetAgentPassword, setAgentDisabled } from '../src/repos/agents.js';
 import { freshDb } from './helpers.js';
 
 // ------------------------------------------------------------------ pure parts
@@ -509,5 +510,61 @@ describe('bot template (copy setup to an agent workspace)', () => {
     const t = await exportBotTemplate(db, ctxA);
     await assert.rejects(importBotTemplate(db, ctxC, { ...t, settings: { ...t.settings, replyDelayMinSec: 9, replyDelayMaxSec: 2 } }, { replaceRules: false }));
     await assert.rejects(importBotTemplate(db, { ...ctxC, role: 'operator' }, t, { replaceRules: false }));
+  });
+});
+
+describe('agents (owner adds workspaces and logins)', () => {
+  let owner: SessionUserT;
+  before(async () => {
+    const id = await createUser(db, { email: 'boss@example.test', name: 'Boss', password: 'password-boss-1', platformOwner: true });
+    owner = { id, email: 'boss@example.test', name: 'Boss', isPlatformOwner: true };
+  });
+
+  test('creates workspace, login and copies the bot setup', async () => {
+    const r = await createAgentWorkspace(db, owner, { workspaceName: 'Agent Siti', slug: 'agent-siti', agentName: 'Siti', agentEmail: 'Siti@Example.test', copyFromSlug: 'ra' });
+    assert.equal(r.email, 'siti@example.test');
+    assert.ok(r.tempPassword && r.tempPassword.length >= 12);
+    assert.equal(r.rulesCopied, (await listKeywordRules(db, ctxA)).length);
+    const token = await login(db, 'siti@example.test', r.tempPassword!);
+    assert.ok(token);
+    const siti = (await getSessionUser(db, token!))!;
+    const ctx = await resolveTenantContext(db, siti, 'agent-siti');
+    assert.equal(ctx.role, 'admin');
+    assert.equal((await getBotSettings(db, ctx)).personaName, (await getBotSettings(db, ctxA)).personaName);
+    await assert.rejects(resolveTenantContext(db, siti, 'ra')); // no access to the owner's workspace
+    const list = await listAgentWorkspaces(db, owner);
+    assert.ok(list.find((w) => w.slug === 'agent-siti')?.admins.some((a) => a.email === 'siti@example.test'));
+  });
+
+  test('second workspace for the same email reuses the login; duplicate slug is refused', async () => {
+    const r = await createAgentWorkspace(db, owner, { workspaceName: 'Agent Siti 2', slug: 'agent-siti-2', agentName: 'Siti', agentEmail: 'siti@example.test' });
+    assert.equal(r.tempPassword, null);
+    assert.equal(r.rulesCopied, null);
+    await assert.rejects(createAgentWorkspace(db, owner, { workspaceName: 'X', slug: 'agent-siti', agentName: 'X', agentEmail: 'x@example.test' }));
+    assert.equal((await listAgentWorkspaces(db, owner)).filter((w) => w.slug === 'agent-siti').length, 1);
+  });
+
+  test('only the platform owner can manage agents', async () => {
+    const notOwner = { ...owner, isPlatformOwner: false };
+    await assert.rejects(createAgentWorkspace(db, notOwner, { workspaceName: 'X', slug: 'agent-x', agentName: 'X', agentEmail: 'x@example.test' }));
+    await assert.rejects(listAgentWorkspaces(db, notOwner));
+  });
+
+  test('reset, disable and own password change end other sessions', async () => {
+    const siti = (await listAgentWorkspaces(db, owner)).find((w) => w.slug === 'agent-siti')!.admins[0]!;
+    const pw = await resetAgentPassword(db, owner, siti.userId);
+    const t1 = (await login(db, 'siti@example.test', pw))!;
+    const t2 = (await login(db, 'siti@example.test', pw))!;
+    const user = (await getSessionUser(db, t1))!;
+    await assert.rejects(changeOwnPassword(db, user, 'wrong-password', 'new-password-123', t1));
+    await changeOwnPassword(db, user, pw, 'new-password-123', t1);
+    assert.ok(await getSessionUser(db, t1));
+    assert.equal(await getSessionUser(db, t2), null);
+    await setAgentDisabled(db, owner, siti.userId, true);
+    assert.equal(await getSessionUser(db, t1), null);
+    assert.equal(await login(db, 'siti@example.test', 'new-password-123'), null);
+    await setAgentDisabled(db, owner, siti.userId, false);
+    assert.ok(await login(db, 'siti@example.test', 'new-password-123'));
+    await assert.rejects(resetAgentPassword(db, owner, owner.id)); // owner account is not an agent
   });
 });

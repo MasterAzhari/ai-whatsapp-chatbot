@@ -21,7 +21,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand">Chatbot Admin</div>
+        <div className="brand">MasterBot</div>
         <div className="tenant">{current?.name}</div>
         <nav>
           <a href={`/w/${slug}`}>Dashboard</a>
@@ -35,6 +35,8 @@ export default async function WorkspaceLayout({ children, params }: { children: 
             </>
           )}
           <a href={`/w/${slug}/connections`}>Sambungan</a>
+          {ctx.user.isPlatformOwner && <a href={`/w/${slug}/agents`}>Agent</a>}
+          <a href={`/w/${slug}/account`}>Akaun</a>
           {ws.length > 1 && <a href="/">Tukar workspace</a>}
         </nav>
         <div className="bottom">

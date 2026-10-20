@@ -19,6 +19,7 @@ export * from './ai/gemini.js';
 export * from './ai/anthropic.js';
 export * from './repos/settings.js';
 export * from './repos/template.js';
+export * from './repos/agents.js';
 export * from './repos/keywords.js';
 export * from './repos/usage.js';
 export * from './routing/match.js';

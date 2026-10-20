@@ -92,3 +92,5 @@ button.danger { color: var(--danger); }
   main { padding: 16px; }
   .bubble { max-width: 90%; }
 }
+code.secret { font-size: 15px; padding: 2px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); user-select: all; }
+.login .brand { font-weight: 700; font-size: 20px; margin-bottom: 8px; }
