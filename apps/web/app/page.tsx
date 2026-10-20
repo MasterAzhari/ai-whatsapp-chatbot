@@ -7,8 +7,8 @@ export default async function Home() {
   if (ws.length === 1) redirect(`/w/${ws[0]!.slug}`);
   return (
     <main>
-      <h1>Pilih workspace</h1>
-      {ws.length === 0 && <p className="muted">Akaun ini belum ada akses ke mana-mana workspace.</p>}
+      <h1>Choose a workspace</h1>
+      {ws.length === 0 && <p className="muted">This account has no access to any workspace yet.</p>}
       <div className="panel list">
         {ws.map((w) => (
           <a key={w.tenantId} className="row" href={`/w/${w.slug}`}>

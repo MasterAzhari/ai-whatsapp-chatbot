@@ -28,7 +28,7 @@ export async function runPlayground(_prev: PlaygroundState, f: FormData): Promis
           ok: true,
           bubbles: r.ai.text ? splitBubbles(r.ai.text) : [],
           handover: r.aiHandover,
-          tokens: `${r.ai.usage.inputTokens ?? 'tiada data'} masuk / ${r.ai.usage.outputTokens ?? 'tiada data'} keluar · ${r.ai.latencyMs} ms · ${r.ai.model}`,
+          tokens: `${r.ai.usage.inputTokens ?? 'no data'} in / ${r.ai.usage.outputTokens ?? 'no data'} out · ${r.ai.latencyMs} ms · ${r.ai.model}`,
         }
       : { ok: false, reason: r.ai.reason, detail: r.ai.detail };
     return { text, route, ai };
@@ -50,7 +50,7 @@ export async function sendAsMockCustomer(f: FormData) {
     type: 'message',
     providerMessageId: `playground-${randomUUID()}`,
     providerIdentity: `playground-${ctx.user.id}`,
-    profileName: `Ujian (${ctx.user.name})`,
+    profileName: `Test (${ctx.user.name})`,
     text: String(f.get('text') ?? '').slice(0, 4096),
     timestamp: new Date(),
   });

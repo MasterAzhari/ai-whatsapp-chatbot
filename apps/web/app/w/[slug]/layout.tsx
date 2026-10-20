@@ -29,24 +29,24 @@ export default async function WorkspaceLayout({ children, params }: { children: 
           {ctx.role !== 'operator' && (
             <>
               <a href={`/w/${slug}/keywords`}>Keyword</a>
-              <a href={`/w/${slug}/settings`}>Tetapan bot</a>
+              <a href={`/w/${slug}/settings`}>Bot settings</a>
               <a href={`/w/${slug}/playground`}>Playground</a>
-              <a href={`/w/${slug}/template`}>Salin tetapan</a>
+              <a href={`/w/${slug}/template`}>Copy settings</a>
             </>
           )}
-          <a href={`/w/${slug}/connections`}>Sambungan</a>
+          <a href={`/w/${slug}/connections`}>Connections</a>
           {ctx.user.isPlatformOwner && <a href={`/w/${slug}/agents`}>Agent</a>}
-          <a href={`/w/${slug}/account`}>Akaun</a>
-          {ws.length > 1 && <a href="/">Tukar workspace</a>}
+          <a href={`/w/${slug}/account`}>Account</a>
+          {ws.length > 1 && <a href="/">Switch workspace</a>}
           <form action={doLogout} className="nav-logout">
-            <button type="submit" className="link">Log keluar</button>
+            <button type="submit" className="link">Log out</button>
           </form>
         </nav>
         <div className="bottom">
           <div>{ctx.user.name}</div>
           <div>{ctx.role}</div>
           <form action={doLogout}>
-            <button type="submit" style={{ marginTop: 8 }}>Log keluar</button>
+            <button type="submit" style={{ marginTop: 8 }}>Log out</button>
           </form>
         </div>
       </aside>

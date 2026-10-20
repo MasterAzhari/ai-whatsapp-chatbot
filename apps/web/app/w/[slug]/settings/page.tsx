@@ -112,33 +112,33 @@ export default async function Settings({ params, searchParams }: { params: Promi
   const aiReady = s.aiEnabled && s.aiModel && s.aiKeyMasked;
   return (
     <>
-      <h1>Tetapan bot</h1>
+      <h1>Bot settings</h1>
       {sp.error && <div className="error">{sp.error}</div>}
-      {sp.saved && <div className="notice">Disimpan.</div>}
+      {sp.saved && <div className="notice">Saved.</div>}
       {!aiReady && (
         <div className="notice">
-          AI belum aktif. Perlu: kunci API untuk penyedia yang dipilih, model dipilih, suis AI workspace hidup, dan suis AI pada channel. Keyword tetap berfungsi tanpa AI.
+          AI is not active yet. Needed: an API key for the chosen provider, a chosen model, the workspace AI switch on, and the AI switch on the channel. Keywords still work without AI.
         </div>
       )}
 
       {AI_PROVIDERS.map((p) => (
         <div key={p}>
-          <h2 className="small muted">Kunci API {PROVIDER_LABEL[p]}{p === s.aiProvider ? ' (sedang digunakan)' : ''}</h2>
+          <h2 className="small muted">{PROVIDER_LABEL[p]} API key{p === s.aiProvider ? ' (in use)' : ''}</h2>
           <div className="panel" style={{ marginBottom: 24 }}>
             <div className="form">
-              <div>Status: {s.keysMasked[p] ? <span className="badge ok">Disimpan ({s.keysMasked[p]})</span> : <span className="badge warn">Tiada</span>}</div>
+              <div>Status: {s.keysMasked[p] ? <span className="badge ok">Saved ({s.keysMasked[p]})</span> : <span className="badge warn">None</span>}</div>
               <form action={saveKey} className="form" style={{ padding: 0 }}>
                 <input type="hidden" name="provider" value={p} />
                 <label>
-                  Kunci baru (disimpan bersulit; tidak akan dipaparkan semula)
+                  New key (stored encrypted; will not be shown again)
                   <input type="password" name="key" autoComplete="off" required minLength={10} maxLength={500} />
                 </label>
-                <button className="primary" type="submit">Simpan kunci</button>
+                <button className="primary" type="submit">Save key</button>
               </form>
               {s.keysMasked[p] && (
                 <form action={clearKey}>
                   <input type="hidden" name="provider" value={p} />
-                  <button className="danger" type="submit">Buang kunci</button>
+                  <button className="danger" type="submit">Remove key</button>
                 </form>
               )}
             </div>
@@ -146,10 +146,10 @@ export default async function Settings({ params, searchParams }: { params: Promi
         </div>
       ))}
 
-      <h2 className="small muted">Suis channel</h2>
+      <h2 className="small muted">Channel switches</h2>
       <div className="panel" style={{ marginBottom: 24 }}>
         <table>
-          <thead><tr><th>Channel</th><th>Automasi (keyword + AI)</th><th>AI</th></tr></thead>
+          <thead><tr><th>Channel</th><th>Automation (keyword + AI)</th><th>AI</th></tr></thead>
           <tbody>
             {channels.map((c) => (
               <tr key={c.id}>
@@ -162,35 +162,35 @@ export default async function Settings({ params, searchParams }: { params: Promi
         </table>
       </div>
 
-      <h2 className="small muted">Persona dan AI</h2>
+      <h2 className="small muted">Persona and AI</h2>
       <div className="panel">
         <form action={save} className="form">
           <input type="hidden" name="version" value={s.version} />
           <div className="row">
-            <label>Nama persona<input name="personaName" required maxLength={80} defaultValue={s.personaName} /></label>
-            <label>Bahasa utama<input name="language" required maxLength={10} defaultValue={s.language} /></label>
+            <label>Persona name<input name="personaName" required maxLength={80} defaultValue={s.personaName} /></label>
+            <label>Main language<input name="language" required maxLength={10} defaultValue={s.language} /></label>
           </div>
           <label>
-            Arahan sistem (gaya, skop, apa yang boleh dan tak boleh dijawab)
+            System instruction (style, scope, what it may and may not answer)
             <textarea name="systemInstruction" rows={8} maxLength={8000} defaultValue={s.systemInstruction} />
           </label>
           <div className="small muted">
-            Peraturan keselamatan tetap sentiasa ditambah: tiada harga atau promosi rekaan, tiada kelulusan, dan arahan dalam mesej pelanggan diabaikan.
+            Fixed safety rules are always added: no made-up prices or promotions, no approvals, and instructions in customer messages are ignored.
           </div>
-          <label className="check"><input type="checkbox" name="aiEnabled" defaultChecked={s.aiEnabled} /> AI hidup untuk workspace ini</label>
-          <label className="check"><input type="checkbox" name="leadMode" defaultChecked={s.leadMode} /> Layan lead sahaja</label>
-          <label>Tempoh layan setiap lead (hari dari keyword lead pertama; 0 = tiada had)<input name="leadDays" type="number" min={0} max={365} defaultValue={s.leadDays} /></label>
-          <div className="small muted">Bila hidup, bot dan AI hanya membalas chat yang bermula dengan keyword lead (contoh teks iklan &quot;Saya nak info Aircond&quot;). Chat lain, seperti team atau kawan, tidak dibalas; anda jawab sendiri. Selepas tempoh tamat, bot berhenti untuk lead itu sehingga dia hantar keyword lead semula. Tanda keyword lead di halaman Keyword.</div>
+          <label className="check"><input type="checkbox" name="aiEnabled" defaultChecked={s.aiEnabled} /> AI on for this workspace</label>
+          <label className="check"><input type="checkbox" name="leadMode" defaultChecked={s.leadMode} /> Leads only</label>
+          <label>How long to serve each lead (days from first lead keyword; 0 = no limit)<input name="leadDays" type="number" min={0} max={365} defaultValue={s.leadDays} /></label>
+          <div className="small muted">When on, the bot and AI only reply to chats that start with a lead keyword (e.g. ad text &quot;Saya nak info Aircond&quot;). Other chats, such as team or friends, get no reply; you answer them yourself. After the period ends, the bot stops for that lead until they send a lead keyword again. Mark lead keywords on the Keyword page.</div>
           <label>
-            Penyedia AI
+            AI provider
             <select name="aiProvider" defaultValue={s.aiProvider}>
               {AI_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
             </select>
           </label>
-          <div className="small muted">Bila tukar penyedia, tukar juga model (contoh Claude: claude-haiku-5-5; Gemini: gemini-3.5-flash-lite).</div>
+          <div className="small muted">When you change provider, change the model too (e.g. Claude: claude-haiku-5-5; Gemini: gemini-3.5-flash-lite).</div>
           <label>
             Model
-            <input name="aiModel" list="models" maxLength={80} defaultValue={s.aiModel ?? ''} placeholder="Pilih dari senarai model" />
+            <input name="aiModel" list="models" maxLength={80} defaultValue={s.aiModel ?? ''} placeholder="Pick from the model list" />
           </label>
           {models && (
             <datalist id="models">
@@ -199,75 +199,75 @@ export default async function Settings({ params, searchParams }: { params: Promi
           )}
           <div className="small">
             {s.aiKeyMasked ? (
-              models ? <span className="muted">{models.length} model tersedia untuk kunci ini. Taip untuk cari.</span>
-              : modelsError ? <span className="error">Gagal dapatkan senarai model: {modelsError}</span>
-              : <a href={`${path}?models=1`}>Muat senarai model dari {PROVIDER_LABEL[s.aiProvider]}</a>
+              models ? <span className="muted">{models.length} models available for this key. Type to search.</span>
+              : modelsError ? <span className="error">Could not get the model list: {modelsError}</span>
+              : <a href={`${path}?models=1`}>Load model list from {PROVIDER_LABEL[s.aiProvider]}</a>
             ) : (
-              <span className="muted">Simpan kunci API dulu untuk lihat senarai model.</span>
+              <span className="muted">Save an API key first to see the model list.</span>
             )}
           </div>
           <div className="row">
-            <label>Had token jawapan<input name="maxOutputTokens" type="number" min={16} max={8192} defaultValue={s.maxOutputTokens} /></label>
-            <label>Temperature (Gemini sahaja; kosong = lalai)<input name="temperature" type="number" min={0} max={2} step="0.1" defaultValue={s.temperature ?? ''} /></label>
+            <label>Answer token limit<input name="maxOutputTokens" type="number" min={16} max={8192} defaultValue={s.maxOutputTokens} /></label>
+            <label>Temperature (Gemini only; empty = default)<input name="temperature" type="number" min={0} max={2} step="0.1" defaultValue={s.temperature ?? ''} /></label>
           </div>
           <div className="row">
-            <label>Bilangan mesej sejarah<input name="historyTurns" type="number" min={1} max={50} defaultValue={s.historyTurns} /></label>
-            <label>Had masa AI (saat)<input name="aiTimeoutSec" type="number" min={1} max={120} defaultValue={s.aiTimeoutMs / 1000} /></label>
+            <label>History messages<input name="historyTurns" type="number" min={1} max={50} defaultValue={s.historyTurns} /></label>
+            <label>AI timeout (seconds)<input name="aiTimeoutSec" type="number" min={1} max={120} defaultValue={s.aiTimeoutMs / 1000} /></label>
           </div>
           <div className="row">
-            <label>Lengah balasan minimum (saat)<input name="replyDelayMinSec" type="number" min={0} max={120} defaultValue={s.replyDelayMinSec} /></label>
-            <label>Lengah balasan maksimum (saat)<input name="replyDelayMaxSec" type="number" min={0} max={120} defaultValue={s.replyDelayMaxSec} /></label>
+            <label>Minimum reply delay (seconds)<input name="replyDelayMinSec" type="number" min={0} max={120} defaultValue={s.replyDelayMinSec} /></label>
+            <label>Maximum reply delay (seconds)<input name="replyDelayMaxSec" type="number" min={0} max={120} defaultValue={s.replyDelayMaxSec} /></label>
           </div>
-          <label className="check"><input type="checkbox" name="typingIndicator" defaultChecked={s.typingIndicator} /> Tunjuk &quot;sedang menaip…&quot; sebelum balas (WhatsApp QR)</label>
-          <div className="small muted">Bot menunggu masa rawak antara minimum dan maksimum, kemudian menaip mengikut panjang jawapan. Balasan manusia tidak dilengahkan.</div>
+          <label className="check"><input type="checkbox" name="typingIndicator" defaultChecked={s.typingIndicator} /> Show &quot;typing…&quot; before replying (WhatsApp QR)</label>
+          <div className="small muted">The bot waits a random time between minimum and maximum, then types for a time based on the answer length. Human replies are not delayed.</div>
           <label>
-            Balasan bila AI gagal (kosong = serah terus kepada manusia)
+            Reply when AI fails (empty = hand straight over to a human)
             <textarea name="fallbackReply" rows={2} maxLength={1000} defaultValue={s.fallbackReply ?? ''} />
           </label>
           <label>
-            Balasan bila pelanggan minta manusia
+            Reply when a customer asks for a human
             <textarea name="handoverReply" rows={2} maxLength={1000} defaultValue={s.handoverReply ?? ''} />
           </label>
           <label>
-            Balasan bila lead hantar video, atau voice note dan gambar yang AI tak dapat baca (kosongkan untuk tidak membalas; chat tetap ditanda perlu staf)
+            Reply when a lead sends a video, or a voice note or picture the AI cannot read (leave empty for no reply; the chat is still marked needs staff)
             <textarea name="mediaReply" rows={2} maxLength={1000} defaultValue={s.mediaReply ?? ''} />
           </label>
           <h3 className="small muted">Auto follow-up</h3>
-          <label className="check"><input type="checkbox" name="followupEnabled" defaultChecked={s.followupEnabled} /> Follow-up pelanggan yang senyap</label>
+          <label className="check"><input type="checkbox" name="followupEnabled" defaultChecked={s.followupEnabled} /> Follow up customers who go quiet</label>
           <div className="row">
             {[0, 1, 2].map((i) => (
               <label key={i}>
-                Follow-up {i + 1} (jam selepas mesej bot sebelumnya)
+                Follow-up {i + 1} (hours after the previous bot message)
                 <input name={`followupGap${i + 1}`} type="number" min={0.25} max={168} step={0.25} defaultValue={s.followupGapsMin[i] != null ? s.followupGapsMin[i]! / 60 : ''} />
               </label>
             ))}
           </div>
           <div className="row">
-            <label>Hantar dari jam (waktu Malaysia)<input name="followupStartHour" type="number" min={0} max={23} defaultValue={s.followupStartHour} /></label>
-            <label>Hingga jam<input name="followupEndHour" type="number" min={1} max={24} defaultValue={s.followupEndHour} /></label>
+            <label>Send from hour (Malaysia time)<input name="followupStartHour" type="number" min={0} max={23} defaultValue={s.followupStartHour} /></label>
+            <label>Until hour<input name="followupEndHour" type="number" min={1} max={24} defaultValue={s.followupEndHour} /></label>
           </div>
           <label>
-            Gaya follow-up untuk AI
+            Follow-up style for AI
             <textarea name="followupInstruction" rows={3} maxLength={2000} defaultValue={s.followupInstruction} />
           </label>
           <div className="small muted">
-            Bila pelanggan tak balas mesej bot, AI hantar follow-up ikut masa di atas, paling banyak 3 kali, kemudian berhenti sehingga pelanggan mesej semula. Kosongkan kotak untuk kurangkan bilangan. Tiada follow-up untuk chat yang staf sedang kendalikan, perlu staf, selesai, berlabel Rejected, atau pelanggan minta dihubungi kemudian. Hanya chat yang dibalas bot selepas suis ini dihidupkan.
+            When a customer does not reply to the bot, AI sends follow-ups at the times above, at most 3 times, then stops until the customer messages again. Clear a box to send fewer. No follow-ups for chats staff are handling, that need staff, are resolved, are labelled Rejected, or where the customer asked to be contacted later. Only chats the bot replied to after this switch was turned on.
           </div>
-          <h3 className="small muted">Notifikasi staf (WhatsApp)</h3>
+          <h3 className="small muted">Staff notifications (WhatsApp)</h3>
           <div className="row">
             {[0, 1, 2].map((i) => (
               <label key={i}>
-                Nombor staf {i + 1}
+                Staff number {i + 1}
                 <input name={`notifyNumber${i + 1}`} type="tel" placeholder="0123456789" maxLength={20} defaultValue={s.notifyNumbers[i] ? `0${s.notifyNumbers[i]!.slice(2)}` : ''} />
               </label>
             ))}
           </div>
           <div className="small muted">
-            Bila chat perlu staf (customer minta staf, keyword serah kepada staf seperti borang diisi, atau AI tak dapat jawab), bot hantar WhatsApp ke nombor ini dengan nama customer, nombor dan link ke chat. Mesej daripada nombor staf tidak dibalas bot. Nombor ini tidak disalin dalam template.
+            When a chat needs staff (customer asks for staff, a hand-over keyword such as a filled form, or AI cannot answer), the bot sends a WhatsApp to these numbers with the customer's name, number and a link to the chat. The bot does not reply to messages from staff numbers. These numbers are not copied in templates.
           </div>
-          <label>Keyword berhenti (mesej tepat, satu setiap baris)<textarea name="stopKeywords" rows={3} defaultValue={s.stopKeywords.join('\n')} /></label>
-          <label>Keyword minta manusia (frasa, satu setiap baris)<textarea name="humanKeywords" rows={3} defaultValue={s.humanKeywords.join('\n')} /></label>
-          <button className="primary" type="submit">Simpan tetapan</button>
+          <label>Stop keywords (exact message, one per line)<textarea name="stopKeywords" rows={3} defaultValue={s.stopKeywords.join('\n')} /></label>
+          <label>Ask-for-human keywords (phrase, one per line)<textarea name="humanKeywords" rows={3} defaultValue={s.humanKeywords.join('\n')} /></label>
+          <button className="primary" type="submit">Save settings</button>
         </form>
       </div>
     </>
@@ -280,8 +280,8 @@ function Toggle({ action, channelId, field, on }: { action: (f: FormData) => Pro
       <input type="hidden" name="channelId" value={channelId} />
       <input type="hidden" name="field" value={field} />
       <input type="hidden" name="on" value={String(!on)} />
-      <span className={`badge ${on ? 'ok' : 'warn'}`}>{on ? 'Hidup' : 'Mati'}</span>{' '}
-      <button type="submit">{on ? 'Matikan' : 'Hidupkan'}</button>
+      <span className={`badge ${on ? 'ok' : 'warn'}`}>{on ? 'On' : 'Off'}</span>{' '}
+      <button type="submit">{on ? 'Turn off' : 'Turn on'}</button>
     </form>
   );
 }

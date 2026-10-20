@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'MasterBot',
     short_name: 'MasterBot',
-    description: 'Inbox dan tetapan bot WhatsApp',
+    description: 'WhatsApp bot inbox and settings',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

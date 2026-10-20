@@ -22,12 +22,12 @@ export default async function Inbox({ params, searchParams }: {
         <div>
           <div style={{ fontSize: 48 }}>💬</div>
           <b>MasterBot Inbox</b>
-          <p className="small muted">Pilih chat di sebelah kiri. Chat yang ditanda Perlu staf menunggu anda.</p>
+          <p className="small muted">Pick a chat on the left. Chats marked Needs staff are waiting for you.</p>
           {ctx.role !== 'operator' && (
             <p className="small">
-              <a href={`/w/${slug}/inbox/export?days=7`}>Muat turun chat 7 hari (untuk semakan)</a>
+              <a href={`/w/${slug}/inbox/export?days=7`}>Download 7 days of chats (for review)</a>
               <br />
-              <span className="muted">Nama, nombor telefon, IC dan emel disembunyikan.</span>
+              <span className="muted">Names, phone numbers, IC and emails are hidden.</span>
             </p>
           )}
         </div>

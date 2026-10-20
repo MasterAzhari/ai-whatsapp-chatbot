@@ -38,37 +38,37 @@ export interface DecisionInput {
 
 /** Pure decision used by both live routing and the playground. */
 export function decide(d: DecisionInput): Route {
-  if (!d.automationEnabled) return { route: 'none', reason: 'automasi dimatikan untuk channel ini' };
-  if (d.humanTakeover) return { route: 'none', reason: 'manusia sedang mengendalikan perbualan ini' };
-  if (d.optedOut) return { route: 'none', reason: 'pelanggan telah berhenti (opt-out)' };
+  if (!d.automationEnabled) return { route: 'none', reason: 'automation is off for this channel' };
+  if (d.humanTakeover) return { route: 'none', reason: 'a human is handling this conversation' };
+  if (d.optedOut) return { route: 'none', reason: 'customer has stopped (opt-out)' };
   if (!d.text.trim()) {
     // Stickers ('other') are treated like an emoji: nothing to answer.
     const media = (d.attachments ?? []).filter((k) => k !== 'other');
-    if (!media.length) return { route: 'none', reason: 'tiada teks (stiker atau mesej kosong)' };
-    if (d.settings.leadMode && !d.isLead) return { route: 'none', reason: 'lampiran daripada chat bukan lead; staf semak sendiri' };
-    return { route: 'media', reason: `${mediaNames(media)} tanpa teks; minta pelanggan taip, staf perlu semak`, reply: d.settings.mediaReply };
+    if (!media.length) return { route: 'none', reason: 'no text (sticker or empty message)' };
+    if (d.settings.leadMode && !d.isLead) return { route: 'none', reason: 'attachment from a non-lead chat; staff to check' };
+    return { route: 'media', reason: `${mediaNames(media)} without text; asked customer to type, staff need to check`, reply: d.settings.mediaReply };
   }
 
   // Lead mode: until a lead keyword arrives, the bot stays silent and staff answer.
   if (d.settings.leadMode && !d.isLead) {
     const lead = pickRule(d.text, d.rules.filter((r) => r.startsLead), { channelId: d.channelId });
-    if (!lead) return { route: 'none', reason: 'bukan lead, atau tempoh lead sudah tamat; staf jawab sendiri' };
+    if (!lead) return { route: 'none', reason: 'not a lead, or lead period has ended; staff to answer' };
     return keywordRoute(lead.rule, lead.pattern);
   }
 
   const stop = matchPattern(d.text, 'exact', d.settings.stopKeywords);
-  if (stop) return { route: 'stop', reason: `keyword berhenti "${stop}"` };
+  if (stop) return { route: 'stop', reason: `stop keyword "${stop}"` };
   const human = matchPattern(d.text, 'phrase', d.settings.humanKeywords);
-  if (human) return { route: 'human', reason: `minta manusia ("${human}")`, reply: d.settings.handoverReply };
+  if (human) return { route: 'human', reason: `asked for a human ("${human}")`, reply: d.settings.handoverReply };
 
   const hit = pickRule(d.text, d.rules, { channelId: d.channelId, lastHitAt: d.lastHitAt });
-  if (hit?.rule.aiReply && d.aiAllowed) return { route: 'ai', reason: `peraturan "${hit.rule.name}" padan "${hit.pattern}": AI jawab` };
+  if (hit?.rule.aiReply && d.aiAllowed) return { route: 'ai', reason: `rule "${hit.rule.name}" matched "${hit.pattern}": AI answers` };
   if (hit) return keywordRoute(hit.rule, hit.pattern);
-  if (!d.aiAllowed) return { route: 'none', reason: 'tiada keyword padan dan AI dimatikan' };
-  return { route: 'ai', reason: 'tiada keyword padan' };
+  if (!d.aiAllowed) return { route: 'none', reason: 'no keyword matched and AI is off' };
+  return { route: 'ai', reason: 'no keyword matched' };
 }
 
-const MEDIA_LABEL: Record<string, string> = { audio: 'voice note', image: 'gambar', video: 'video', document: 'fail' };
+const MEDIA_LABEL: Record<string, string> = { audio: 'voice note', image: 'picture', video: 'video', document: 'file' };
 function mediaNames(kinds: string[]): string {
   return [...new Set(kinds.map((k) => MEDIA_LABEL[k] ?? k))].join(', ');
 }
@@ -79,7 +79,7 @@ const MEDIA_REPLY_COOLDOWN_MIN = 30;
 function keywordRoute(rule: KeywordRule, pattern: string): Route {
   return {
     route: 'keyword',
-    reason: `peraturan "${rule.name}" padan "${pattern}" (${rule.matchType === 'exact' ? 'tepat' : 'frasa'})${rule.startsLead ? ', keyword lead' : ''}`,
+    reason: `rule "${rule.name}" matched "${pattern}" (${rule.matchType === 'exact' ? 'exact' : 'phrase'})${rule.startsLead ? ', keyword lead' : ''}`,
     ruleId: rule.id,
     ruleName: rule.name,
     pattern,
@@ -241,8 +241,8 @@ async function readMedia(db: Db, tenantId: string, messageId: string, t: Transcr
       await tx.query('DELETE FROM message_media WHERE message_id = $1', [messageId]);
       return 'reroute';
     }
-    const why = result.ok ? 'tiada suara jelas' : `${result.reason}: ${result.detail}`;
-    await mediaFallback(tx, tenantId, t.conversationId, messageId, { reason: `AI tak dapat baca ${t.kind === 'audio' ? 'voice note' : 'gambar'} (${why}); minta pelanggan taip`, reply: t.reply }, s, !m.superseded);
+    const why = result.ok ? 'no clear speech' : `${result.reason}: ${result.detail}`;
+    await mediaFallback(tx, tenantId, t.conversationId, messageId, { reason: `AI could not read ${t.kind === 'audio' ? 'voice note' : 'picture'} (${why}); asked customer to type`, reply: t.reply }, s, !m.superseded);
     return 'media';
   });
   return outcome === 'reroute' ? routeInbound(db, tenantId, messageId, deps) : outcome;
@@ -285,7 +285,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     );
     // A staff member answering one of the bot's alerts is not a customer.
     if (isStaffNumber(m.phone_e164, settings.notifyNumbers)) {
-      await setRoute(tx, messageId, { route: 'none', reason: 'nombor staf (notifikasi); bot tidak membalas' });
+      await setRoute(tx, messageId, { route: 'none', reason: 'staff number (notifications); bot does not reply' });
       return 'none';
     }
     const aiAllowed = settings.aiEnabled && !!settings.aiModel && (m.conv_ai ?? m.channel_ai) === true;
@@ -315,7 +315,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       case 'human':
         await handOver(tx, m.conversation_id);
         if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover'), delayMs: replyDelayMs(settings) });
-        await notifyStaff(tx, tenantId, m.conversation_id, 'Customer minta cakap dengan staf', key('notify'));
+        await notifyStaff(tx, tenantId, m.conversation_id, 'Customer asked for staff', key('notify'));
         await setRoute(tx, messageId, d);
         return 'human';
       case 'media': {
@@ -357,7 +357,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       case 'ai': {
         if (m.superseded) {
           // A newer message's own routing job answers with the full context.
-          await setRoute(tx, messageId, { route: 'none', reason: 'mesej lebih baru tiba; AI jawab mesej itu' });
+          await setRoute(tx, messageId, { route: 'none', reason: 'a newer message arrived; AI answers that one' });
           return 'none';
         }
         // Compare timestamps inside SQL: a JS Date drops microseconds, which would
@@ -413,7 +413,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     if (!m || m.route) return 'skipped';
     const stillAllowed = m.automation_enabled && !m.human_takeover && !m.opted_out;
     if (!stillAllowed || m.superseded) {
-      await setRoute(tx, messageId, { route: 'none', reason: 'jawapan AI dibuang: perbualan berubah semasa AI menjana' });
+      await setRoute(tx, messageId, { route: 'none', reason: 'AI answer discarded: conversation changed while AI was generating' });
       return 'ai_discarded';
     }
     const key = (suffix: string) => `${suffix}:${messageId}`;
@@ -427,22 +427,22 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       }
       const meta = { model: result.model, latencyMs: result.latencyMs, usage: result.usage };
       if (h.handover) {
-        await notifyStaff(tx, tenantId, m.conversation_id, `AI: ${h.reason ?? 'perlu staf'}`, key('notify'));
-        await setRoute(tx, messageId, { route: 'human', reason: `AI serah kepada staf (${h.reason ?? 'tiada sebab'})`, ...meta });
+        await notifyStaff(tx, tenantId, m.conversation_id, `AI: ${h.reason ?? 'needs staff'}`, key('notify'));
+        await setRoute(tx, messageId, { route: 'human', reason: `AI handed over to staff (${h.reason ?? 'no reason'})`, ...meta });
         return 'ai_handover';
       }
-      await setRoute(tx, messageId, { route: 'ai', reason: 'tiada keyword padan', ...meta });
+      await setRoute(tx, messageId, { route: 'ai', reason: 'no keyword matched', ...meta });
       return 'ai_reply';
     }
     // AI failed (timeout, quota, invalid model...): fixed fallback, or hand over to a human.
     if (s.fallbackReply) {
       await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: s.fallbackReply, origin: 'system', idempotencyKey: key('fallback'), delayMs: replyDelayMs(s) });
-      await setRoute(tx, messageId, { route: 'ai', reason: `AI gagal (${result.reason}: ${result.detail}); balasan sandaran dihantar` });
+      await setRoute(tx, messageId, { route: 'ai', reason: `AI failed (${result.reason}: ${result.detail}); fallback reply sent` });
       return 'ai_fallback';
     }
     await handOver(tx, m.conversation_id);
-    await notifyStaff(tx, tenantId, m.conversation_id, 'AI tak dapat jawab', key('notify'));
-    await setRoute(tx, messageId, { route: 'human', reason: `AI gagal (${result.reason}: ${result.detail}); diserahkan kepada manusia` });
+    await notifyStaff(tx, tenantId, m.conversation_id, 'AI could not answer', key('notify'));
+    await setRoute(tx, messageId, { route: 'human', reason: `AI failed (${result.reason}: ${result.detail}); handed over to a human` });
     return 'ai_handover';
   });
 }

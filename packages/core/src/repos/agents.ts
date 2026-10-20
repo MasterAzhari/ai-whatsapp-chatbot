@@ -55,7 +55,7 @@ export async function listAgentWorkspaces(db: Db, owner: SessionUser): Promise<A
 
 export const NewAgentInput = z.object({
   workspaceName: z.string().trim().min(2).max(200),
-  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, 'slug: huruf kecil, nombor dan tanda sempang sahaja'),
+  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, 'slug: lowercase letters, numbers and dashes only'),
   agentName: z.string().trim().min(1).max(200),
   agentEmail: z.string().trim().toLowerCase().email(),
   copyFromSlug: z.string().trim().nullable().optional(),
@@ -77,12 +77,12 @@ export async function createAgentWorkspace(db: Db, owner: SessionUser, input: z.
   const hash = await hashPassword(pw);
   const made = await withSystem(db, async (tx) => {
     const exists = await tx.query('SELECT 1 FROM tenants WHERE slug = $1', [v.slug]);
-    if (exists.rowCount) throw Object.assign(new Error(`slug "${v.slug}" sudah digunakan`), { status: 409 });
+    if (exists.rowCount) throw Object.assign(new Error(`slug "${v.slug}" is already taken`), { status: 409 });
     const t = await tx.query<{ id: string }>('INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id', [v.slug, v.workspaceName]);
     const tenantId = t.rows[0]!.id;
     const existing = await tx.query<{ id: string; is_platform_owner: boolean }>('SELECT id, is_platform_owner FROM users WHERE lower(email) = $1', [v.agentEmail]);
     let userId = existing.rows[0]?.id;
-    if (existing.rows[0]?.is_platform_owner) throw Object.assign(new Error('emel ini akaun pemilik platform'), { status: 409 });
+    if (existing.rows[0]?.is_platform_owner) throw Object.assign(new Error('this email is the platform owner account'), { status: 409 });
     const isNew = !userId;
     if (!userId) {
       userId = (await tx.query<{ id: string }>('INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id', [v.agentEmail, v.agentName, hash])).rows[0]!.id;
@@ -107,7 +107,7 @@ export async function createAgentWorkspace(db: Db, owner: SessionUser, input: z.
 
 async function sourceContext(db: Db, owner: SessionUser, slug: string) {
   const t = await withSystem(db, (tx) => tx.query<{ id: string }>('SELECT id FROM tenants WHERE slug = $1', [slug]));
-  if (!t.rows[0]) throw new Error('workspace sumber tidak dijumpai');
+  if (!t.rows[0]) throw new Error('source workspace not found');
   return { tenantId: t.rows[0].id, user: owner, role: 'platform_owner' as const };
 }
 
@@ -118,7 +118,7 @@ export async function resetAgentPassword(db: Db, owner: SessionUser, userId: str
   const hash = await hashPassword(pw);
   await withSystem(db, async (tx) => {
     const r = await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1 AND NOT is_platform_owner RETURNING id', [userId, hash]);
-    if (!r.rowCount) throw new Error('akaun agent tidak dijumpai');
+    if (!r.rowCount) throw new Error('agent account not found');
     await tx.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
     await tx.query(
       `INSERT INTO audit_events (actor_type, actor_id, action, target_type, target_id, source) VALUES ('user', $1, 'agent.password_reset', 'user', $2, 'web')`,
@@ -136,7 +136,7 @@ export async function setAgentDisabled(db: Db, owner: SessionUser, userId: strin
       `UPDATE users SET disabled_at = CASE WHEN $2 THEN coalesce(disabled_at, now()) ELSE NULL END WHERE id = $1 AND NOT is_platform_owner RETURNING id`,
       [userId, disabled],
     );
-    if (!r.rowCount) throw new Error('akaun agent tidak dijumpai');
+    if (!r.rowCount) throw new Error('agent account not found');
     if (disabled) await tx.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
     await tx.query(
       `INSERT INTO audit_events (actor_type, actor_id, action, target_type, target_id, source) VALUES ('user', $1, $3, 'user', $2, 'web')`,
@@ -148,10 +148,10 @@ export async function setAgentDisabled(db: Db, owner: SessionUser, userId: strin
 /** Any signed-in user changes their own password; other sessions are signed out. */
 export async function changeOwnPassword(db: Db, user: SessionUser, current: string, next: string, keepSessionToken?: string): Promise<void> {
   const keep = keepSessionToken ? createHash('sha256').update(keepSessionToken).digest('hex') : null;
-  const v = z.string().min(10, 'kata laluan baru sekurang-kurangnya 10 aksara').max(200).parse(next);
+  const v = z.string().min(10, 'new password must be at least 10 characters').max(200).parse(next);
   await withSystem(db, async (tx) => {
     const { rows } = await tx.query<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = $1', [user.id]);
-    if (!rows[0] || !(await verifyPassword(current, rows[0].password_hash))) throw new Error('kata laluan semasa salah');
+    if (!rows[0] || !(await verifyPassword(current, rows[0].password_hash))) throw new Error('current password is wrong');
     await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [user.id, await hashPassword(v)]);
     await tx.query('DELETE FROM sessions WHERE user_id = $1 AND id_hash IS DISTINCT FROM $2', [user.id, keep]);
     await tx.query(`INSERT INTO audit_events (actor_type, actor_id, action, source) VALUES ('user', $1, 'auth.password_change', 'web')`, [user.id]);
@@ -166,9 +166,9 @@ export async function renameWorkspace(db: Db, owner: SessionUser, tenantId: stri
   const v = RenameWorkspaceInput.parse(input);
   await withSystem(db, async (tx) => {
     const before = await tx.query<{ slug: string; name: string }>('SELECT slug, name FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
-    if (!before.rows[0]) throw new Error('workspace tidak dijumpai');
+    if (!before.rows[0]) throw new Error('workspace not found');
     const taken = await tx.query('SELECT 1 FROM tenants WHERE slug = $1 AND id <> $2', [v.slug, tenantId]);
-    if (taken.rowCount) throw Object.assign(new Error(`slug "${v.slug}" sudah digunakan`), { status: 409 });
+    if (taken.rowCount) throw Object.assign(new Error(`slug "${v.slug}" is already taken`), { status: 409 });
     await tx.query('UPDATE tenants SET name = $2, slug = $3 WHERE id = $1', [tenantId, v.workspaceName, v.slug]);
     await tx.query(
       `INSERT INTO audit_events (tenant_id, actor_type, actor_id, action, target_type, target_id, before, after, source)
@@ -181,7 +181,7 @@ export async function renameWorkspace(db: Db, owner: SessionUser, tenantId: stri
 
 /** Any signed-in user changes the name shown for them. */
 export async function changeOwnName(db: Db, user: SessionUser, name: string): Promise<void> {
-  const v = z.string().trim().min(1, 'nama diperlukan').max(200).parse(name);
+  const v = z.string().trim().min(1, 'name is required').max(200).parse(name);
   await withSystem(db, (tx) => tx.query('UPDATE users SET name = $2 WHERE id = $1', [user.id, v]));
 }
 

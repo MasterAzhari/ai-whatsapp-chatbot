@@ -922,9 +922,9 @@ describe('conversation review export', () => {
   test('hides phone, IC and email but keeps prices and package names', () => {
     assert.equal(
       redactPersonal('Nama Ali, IC 900101-07-5555, tel 012-345 6789, ali@mail.com. Combo D 1.0+1.5HP RM220, poskod 08000'),
-      'Nama Ali, IC [IC], tel [nombor], [emel]. Combo D 1.0+1.5HP RM220, poskod 08000',
+      'Nama Ali, IC [IC], tel [number], [email]. Combo D 1.0+1.5HP RM220, poskod 08000',
     );
-    assert.equal(redactPersonal('+60123456789 / 900101075555'), '[nombor] / [IC]');
+    assert.equal(redactPersonal('+60123456789 / 900101075555'), '[number] / [IC]');
   });
 });
 

@@ -102,7 +102,7 @@ const keywordList = z.array(z.string().trim().min(1).max(100)).max(50);
 const staffNumber = z
   .string()
   .transform((v) => v.replace(/\D/g, '').replace(/^0/, '60'))
-  .pipe(z.string().regex(/^601\d{7,9}$/, 'nombor telefon Malaysia tidak sah'));
+  .pipe(z.string().regex(/^601\d{7,9}$/, 'invalid Malaysian phone number'));
 
 export const SettingsUpdate = z.object({
   expectedVersion: z.number().int(),

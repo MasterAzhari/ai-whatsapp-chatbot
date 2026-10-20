@@ -79,44 +79,44 @@ export default async function Keywords({ params, searchParams }: { params: Promi
     <>
       <h1>Keyword</h1>
       <p className="small muted">
-        Keyword diperiksa sebelum AI. Padanan &quot;frasa&quot; mencari perkataan penuh dalam mesej (&quot;ok&quot; tidak padan dengan &quot;book&quot;); &quot;tepat&quot; perlukan
-        keseluruhan mesej sama. Nombor keutamaan lebih kecil diperiksa dulu, dan hanya satu peraturan dipakai bagi setiap mesej.
+        Keywords are checked before AI. A &quot;phrase&quot; match looks for whole words in the message (&quot;ok&quot; does not match &quot;book&quot;); &quot;exact&quot; needs
+        the whole message to be the same. Lower priority numbers are checked first, and only one rule applies to each message.
       </p>
       {error && <div className="error">{error}</div>}
       <div className="panel" style={{ marginBottom: 24 }}>
         <table>
           <thead>
-            <tr><th>Keutamaan</th><th>Nama</th><th>Padanan</th><th>Tindakan</th><th>Status</th><th /></tr>
+            <tr><th>Priority</th><th>Name</th><th>Match</th><th>Actions</th><th>Status</th><th /></tr>
           </thead>
           <tbody>
-            {rules.length === 0 && <tr><td colSpan={6} className="muted">Belum ada peraturan.</td></tr>}
+            {rules.length === 0 && <tr><td colSpan={6} className="muted">No rules yet.</td></tr>}
             {rules.map((r) => (
               <tr key={r.id}>
                 <td>{r.priority}</td>
-                <td>{r.name}{r.channelId && <div className="small muted">{channels.find((c) => c.id === r.channelId)?.name ?? 'channel lain'}</div>}</td>
-                <td><span className="small muted">{r.matchType === 'exact' ? 'tepat' : 'frasa'}:</span> {r.patterns.join(', ')}</td>
+                <td>{r.name}{r.channelId && <div className="small muted">{channels.find((c) => c.id === r.channelId)?.name ?? 'other channel'}</div>}</td>
+                <td><span className="small muted">{r.matchType === 'exact' ? 'exact' : 'phrase'}:</span> {r.patterns.join(', ')}</td>
                 <td className="small">
-                  {r.imageAssetId && <img src={`/w/${slug}/media/${r.imageAssetId}`} alt="Gambar" style={{ display: 'block', maxWidth: 80, borderRadius: 6, marginBottom: 4 }} />}
-                  {r.replyText && <div>Balas: {r.replyText.slice(0, 80)}</div>}
+                  {r.imageAssetId && <img src={`/w/${slug}/media/${r.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 80, borderRadius: 6, marginBottom: 4 }} />}
+                  {r.replyText && <div>Reply: {r.replyText.slice(0, 80)}</div>}
                   {r.setLabel && <div>Label: {r.setLabel}</div>}
                   {r.startsLead && <div><span className="badge ok">Keyword lead</span></div>}
-                  {r.handover && <div>Serah kepada manusia</div>}
-                  {r.aiReply && <div>AI jawab</div>}
-                  {r.cooldownSeconds > 0 && <div className="muted">Rehat {Math.round(r.cooldownSeconds / 60)} min</div>}
+                  {r.handover && <div>Hand over to human</div>}
+                  {r.aiReply && <div>AI answers</div>}
+                  {r.cooldownSeconds > 0 && <div className="muted">Cooldown {Math.round(r.cooldownSeconds / 60)} min</div>}
                 </td>
-                <td><span className={`badge ${r.enabled ? 'ok' : 'warn'}`}>{r.enabled ? 'Hidup' : 'Mati'}</span></td>
+                <td><span className={`badge ${r.enabled ? 'ok' : 'warn'}`}>{r.enabled ? 'On' : 'Off'}</span></td>
                 <td>
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <a href={`${path}?edit=${r.id}`}>Ubah</a>
+                      <a href={`${path}?edit=${r.id}`}>Edit</a>
                       <form action={toggle} className="inline">
                         <input type="hidden" name="id" value={r.id} />
                         <input type="hidden" name="enabled" value={String(!r.enabled)} />
-                        <button type="submit">{r.enabled ? 'Matikan' : 'Hidupkan'}</button>
+                        <button type="submit">{r.enabled ? 'Turn off' : 'Turn on'}</button>
                       </form>
                       <form action={remove} className="inline">
                         <input type="hidden" name="id" value={r.id} />
-                        <button type="submit">Padam</button>
+                        <button type="submit">Delete</button>
                       </form>
                     </div>
                   )}
@@ -128,9 +128,9 @@ export default async function Keywords({ params, searchParams }: { params: Promi
       </div>
       {isAdmin && (
         <div className="panel">
-          <h2 style={{ marginTop: 0 }}>{editing ? `Ubah "${editing.name}"` : 'Peraturan baru'}</h2>
+          <h2 style={{ marginTop: 0 }}>{editing ? `Edit "${editing.name}"` : 'New rule'}</h2>
           <RuleForm key={editing?.id ?? 'new'} action={editing ? update : create} rule={editing} channels={channels} slug={slug} />
-          {editing && <a href={path}>Batal</a>}
+          {editing && <a href={path}>Cancel</a>}
         </div>
       )}
     </>
@@ -142,43 +142,43 @@ function RuleForm({ action, rule, channels, slug }: { action: (f: FormData) => P
     <form action={action} className="form">
       {rule && <input type="hidden" name="id" value={rule.id} />}
       {rule && <input type="hidden" name="version" value={rule.version} />}
-      <label>Nama<input name="name" required maxLength={100} defaultValue={rule?.name} /></label>
+      <label>Name<input name="name" required maxLength={100} defaultValue={rule?.name} /></label>
       <label>
-        Jenis padanan
+        Match type
         <select name="matchType" defaultValue={rule?.matchType ?? 'phrase'}>
-          <option value="phrase">Frasa (perkataan penuh dalam mesej)</option>
-          <option value="exact">Tepat (seluruh mesej)</option>
+          <option value="phrase">Phrase (whole words in the message)</option>
+          <option value="exact">Exact (whole message)</option>
         </select>
       </label>
-      <label>Keyword (satu setiap baris)<textarea name="patterns" rows={3} required defaultValue={rule?.patterns.join('\n')} /></label>
-      <label>Balasan tetap<textarea name="replyText" rows={5} maxLength={4096} defaultValue={rule?.replyText ?? ''} /></label>
-      <div className="small muted">Untuk hantar sebagai beberapa bubble (maksimum 4), letak satu baris <code>---</code> antara setiap bubble. Gambar dihantar bersama bubble pertama.</div>
+      <label>Keywords (one per line)<textarea name="patterns" rows={3} required defaultValue={rule?.patterns.join('\n')} /></label>
+      <label>Fixed reply<textarea name="replyText" rows={5} maxLength={4096} defaultValue={rule?.replyText ?? ''} /></label>
+      <div className="small muted">To send as several bubbles (maximum 4), put a <code>---</code> line between each bubble. The picture is sent with the first bubble.</div>
       <label>
-        Gambar bersama balasan (pilihan: poster atau gambar produk, JPG/PNG/WebP sehingga 5 MB; balasan jadi kapsyen, maksimum 1000 aksara)
-        {rule?.imageAssetId && <img src={`/w/${slug}/media/${rule.imageAssetId}`} alt="Gambar semasa" style={{ display: 'block', maxWidth: 160, borderRadius: 8, margin: '6px 0' }} />}
+        Picture with the reply (optional: poster or product picture, JPG/PNG/WebP up to 5 MB; the reply becomes the caption, maximum 1000 characters)
+        {rule?.imageAssetId && <img src={`/w/${slug}/media/${rule.imageAssetId}`} alt="Current picture" style={{ display: 'block', maxWidth: 160, borderRadius: 8, margin: '6px 0' }} />}
         <input type="file" name="image" accept="image/jpeg,image/png,image/webp" />
       </label>
       {rule?.imageAssetId && (
         <>
           <input type="hidden" name="currentImage" value={rule.imageAssetId} />
-          <label className="check"><input type="checkbox" name="removeImage" /> Buang gambar</label>
+          <label className="check"><input type="checkbox" name="removeImage" /> Remove picture</label>
         </>
       )}
-      <label>Label pelanggan (pilihan)<input name="setLabel" maxLength={60} defaultValue={rule?.setLabel ?? ''} /></label>
+      <label>Customer label (optional)<input name="setLabel" maxLength={60} defaultValue={rule?.setLabel ?? ''} /></label>
       <label>
         Channel
         <select name="channelId" defaultValue={rule?.channelId ?? ''}>
-          <option value="">Semua channel</option>
+          <option value="">All channels</option>
           {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
-      <label>Keutamaan (kecil dulu)<input name="priority" type="number" min={0} max={10000} defaultValue={rule?.priority ?? 100} /></label>
-      <label>Rehat sebelum padan lagi dalam perbualan sama (minit)<input name="cooldownMinutes" type="number" min={0} step="1" defaultValue={rule ? Math.round(rule.cooldownSeconds / 60) : 0} /></label>
-      <label className="check"><input type="checkbox" name="aiReply" defaultChecked={rule?.aiReply} /> Biar AI jawab (AI baca seluruh chat; balasan di atas dipakai hanya jika AI mati)</label>
-      <label className="check"><input type="checkbox" name="handover" defaultChecked={rule?.handover} /> Serahkan perbualan kepada manusia</label>
-      <label className="check"><input type="checkbox" name="startsLead" defaultChecked={rule?.startsLead} /> Keyword lead: chat yang masuk dengan keyword ini dilayan bot dan AI (untuk mod &quot;Layan lead sahaja&quot;)</label>
-      <label className="check"><input type="checkbox" name="enabled" defaultChecked={rule?.enabled ?? true} /> Hidup</label>
-      <button className="primary" type="submit">Simpan</button>
+      <label>Priority (lower first)<input name="priority" type="number" min={0} max={10000} defaultValue={rule?.priority ?? 100} /></label>
+      <label>Cooldown before matching again in the same conversation (minutes)<input name="cooldownMinutes" type="number" min={0} step="1" defaultValue={rule ? Math.round(rule.cooldownSeconds / 60) : 0} /></label>
+      <label className="check"><input type="checkbox" name="aiReply" defaultChecked={rule?.aiReply} /> Let AI answer (AI reads the whole chat; the reply above is used only if AI is off)</label>
+      <label className="check"><input type="checkbox" name="handover" defaultChecked={rule?.handover} /> Hand the conversation over to a human</label>
+      <label className="check"><input type="checkbox" name="startsLead" defaultChecked={rule?.startsLead} /> Lead keyword: chats that come in with this keyword are served by the bot and AI (for &quot;Leads only&quot; mode)</label>
+      <label className="check"><input type="checkbox" name="enabled" defaultChecked={rule?.enabled ?? true} /> On</label>
+      <button className="primary" type="submit">Save</button>
     </form>
   );
 }

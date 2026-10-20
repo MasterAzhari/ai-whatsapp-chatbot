@@ -61,66 +61,66 @@ export default async function Agents({ params, searchParams }: { params: Promise
     <>
       <h1>Agent</h1>
       {sp.error && <div className="error">{sp.error}</div>}
-      {sp.purged && <div className="notice">Data contoh telah dibuang. Yang tinggal hanya data sebenar.</div>}
+      {sp.purged && <div className="notice">Sample data removed. Only real data remains.</div>}
       <p className="small muted">
-        Setiap agent dapat workspace sendiri: pelanggan, perbualan, nombor WhatsApp dan kunci API mereka terasing daripada workspace lain. Agent tidak boleh lihat workspace anda.
+        Each agent gets their own workspace: their customers, conversations, WhatsApp numbers and API keys are kept apart from other workspaces. Agents cannot see your workspace.
       </p>
 
       {(demo.mockChannels > 0 || demo.sampleWorkspaces.length > 0) && (
         <div className="panel" style={{ padding: 16, marginBottom: 24 }}>
-          <b>Data contoh masih ada</b>
+          <b>Sample data still present</b>
           <p className="small" style={{ margin: '6px 0' }}>
-            {demo.mockChannels} sambungan WhatsApp olok-olok dengan {demo.conversations} chat contoh
-            {demo.sampleWorkspaces.length > 0 && <>, dan workspace contoh: {demo.sampleWorkspaces.join(', ')}</>}.
-            Nombor WhatsApp sebenar, chat pelanggan sebenar, keyword dan tetapan bot tidak disentuh.
+            {demo.mockChannels} mock WhatsApp connections with {demo.conversations} sample chats
+            {demo.sampleWorkspaces.length > 0 && <>, and sample workspaces: {demo.sampleWorkspaces.join(', ')}</>}.
+            Real WhatsApp numbers, real customer chats, keywords and bot settings are not touched.
           </p>
           <form action={purge} className="toolbar" style={{ marginBottom: 0 }}>
-            <label className="small"><input type="checkbox" required /> Saya faham data contoh ini dipadam terus</label>
-            <button type="submit" className="danger">Buang data contoh</button>
+            <label className="small"><input type="checkbox" required /> I understand this sample data is deleted permanently</label>
+            <button type="submit" className="danger">Remove sample data</button>
           </form>
         </div>
       )}
 
-      <h2 className="small muted">Tambah agent</h2>
+      <h2 className="small muted">Add agent</h2>
       <AddAgentForm sources={list.map((w) => ({ slug: w.slug, name: w.name }))} defaultSource={slug} />
 
-      <h2 className="small muted" style={{ marginTop: 24 }}>Semua workspace</h2>
+      <h2 className="small muted" style={{ marginTop: 24 }}>All workspaces</h2>
       <div className="panel">
         <table>
-          <thead><tr><th>Workspace</th><th>Admin</th><th>WhatsApp</th><th>Dicipta</th></tr></thead>
+          <thead><tr><th>Workspace</th><th>Admin</th><th>WhatsApp</th><th>Created</th></tr></thead>
           <tbody>
             {list.map((w) => (
               <tr key={w.tenantId}>
                 <td>
                   <a href={`/w/${w.slug}`}>{w.name}</a><div className="small muted">{w.slug}</div>
                   <details className="small" style={{ marginTop: 4 }}>
-                    <summary>Tukar nama</summary>
+                    <summary>Rename</summary>
                     <form action={rename} className="form" style={{ marginTop: 6 }}>
                       <input type="hidden" name="tenantId" value={w.tenantId} />
                       <input type="hidden" name="oldSlug" value={w.slug} />
-                      <label>Nama workspace<input name="name" defaultValue={w.name} required minLength={2} maxLength={200} /></label>
-                      <label>Alamat (slug, dalam URL)<input name="newSlug" defaultValue={w.slug} required pattern="[a-z0-9][a-z0-9\-]{1,62}" /></label>
-                      <button type="submit">Simpan</button>
+                      <label>Workspace name<input name="name" defaultValue={w.name} required minLength={2} maxLength={200} /></label>
+                      <label>Address (slug, in the URL)<input name="newSlug" defaultValue={w.slug} required pattern="[a-z0-9][a-z0-9\-]{1,62}" /></label>
+                      <button type="submit">Save</button>
                     </form>
                   </details>
                 </td>
                 <td>
-                  {w.admins.length === 0 && <span className="muted">Tiada</span>}
+                  {w.admins.length === 0 && <span className="muted">None</span>}
                   {w.admins.map((a) => (
                     <div key={a.userId} style={{ marginBottom: 6 }}>
-                      {a.name} · {a.email} {a.disabled && <span className="badge warn">Disekat</span>}
+                      {a.name} · {a.email} {a.disabled && <span className="badge warn">Blocked</span>}
                       {!a.isOwner && <div className="toolbar" style={{ marginTop: 4, marginBottom: 0 }}>
                         <ResetPasswordButton userId={a.userId} email={a.email} />
                         <form action={toggle}>
                           <input type="hidden" name="userId" value={a.userId} />
                           <input type="hidden" name="disable" value={String(!a.disabled)} />
-                          <button type="submit" className={a.disabled ? '' : 'danger'}>{a.disabled ? 'Buka sekatan' : 'Sekat log masuk'}</button>
+                          <button type="submit" className={a.disabled ? '' : 'danger'}>{a.disabled ? 'Unblock' : 'Block login'}</button>
                         </form>
                       </div>}
                     </div>
                   ))}
                 </td>
-                <td>{w.connectedChannels}/{w.channels} bersambung</td>
+                <td>{w.connectedChannels}/{w.channels} connected</td>
                 <td className="small">{w.createdAt.slice(0, 10)}</td>
               </tr>
             ))}

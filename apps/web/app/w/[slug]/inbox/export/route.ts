@@ -13,7 +13,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   return new Response(JSON.stringify(r, null, 2), {
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'content-disposition': `attachment; filename="semakan-chat-${slug}-${r.exportedAt.slice(0, 10)}.json"`,
+      'content-disposition': `attachment; filename="chat-review-${slug}-${r.exportedAt.slice(0, 10)}.json"`,
       'cache-control': 'no-store',
     },
   });

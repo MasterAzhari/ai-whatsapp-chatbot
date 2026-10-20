@@ -38,10 +38,10 @@ export async function workspaces(user: SessionUser) {
 /** A short, user-safe message for a failed action (validation, edit conflict, permissions). */
 export function actionError(err: unknown): string {
   const e = err as { status?: number; issues?: Array<{ path: Array<string | number>; message: string }>; message?: string };
-  if (e?.status === 409) return 'Data ini telah diubah oleh orang lain. Muat semula dan cuba lagi.';
+  if (e?.status === 409) return 'Someone else changed this data. Reload and try again.';
   if (e?.issues) return e.issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; ');
-  if (e?.status === 403) return 'Anda tiada kebenaran untuk tindakan ini.';
-  return e?.message?.slice(0, 200) ?? 'Ralat tidak diketahui';
+  if (e?.status === 403) return 'You do not have permission for this action.';
+  return e?.message?.slice(0, 200) ?? 'Unknown error';
 }
 
 /** Splits a textarea of one item per line (or comma separated) into a clean list. */

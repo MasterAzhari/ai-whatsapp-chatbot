@@ -70,5 +70,5 @@ export async function simulate(
   );
   if (!ai.ok) return { route, ai };
   const h = extractHandover(ai.text);
-  return { route, ai: { ...ai, text: h.text }, ...(h.handover ? { aiHandover: h.reason ?? 'perlu staf' } : {}) };
+  return { route, ai: { ...ai, text: h.text }, ...(h.handover ? { aiHandover: h.reason ?? 'needs staff' } : {}) };
 }

@@ -7,7 +7,7 @@ import { audit } from './audit.js';
 import { loadSettings } from './settings.js';
 import { leadActive } from '../routing/router.js';
 
-const MEDIA_LABEL: Record<string, string> = { audio: 'Voice note', image: 'Gambar', video: 'Video', document: 'Fail', other: 'Stiker' };
+const MEDIA_LABEL: Record<string, string> = { audio: 'Voice note', image: 'Picture', video: 'Video', document: 'File', other: 'Sticker' };
 
 export interface ConversationSummary {
   id: string;
@@ -77,7 +77,7 @@ export async function listConversations(db: Db, ctx: TenantContext, filter: z.in
       contactPhone: r.phone_e164,
       channelName: r.channel_name,
       lastMessageAt: r.last_message_at?.toISOString() ?? null,
-      lastMessagePreview: r.preview?.replace(/^\[(\w+)\]$/, (_: string, k: string) => `[${MEDIA_LABEL[k] ?? 'Lampiran'}]`) ?? null,
+      lastMessagePreview: r.preview?.replace(/^\[(\w+)\]$/, (_: string, k: string) => `[${MEDIA_LABEL[k] ?? 'Attachment'}]`) ?? null,
     }));
   });
 }
@@ -117,7 +117,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
         origin: x.origin,
         body: x.body,
         imageAssetId: x.image_asset_id,
-        attachments: ((x.attachments ?? []) as Array<{ kind: string }>).map((a) => MEDIA_LABEL[a.kind] ?? 'Lampiran'),
+        attachments: ((x.attachments ?? []) as Array<{ kind: string }>).map((a) => MEDIA_LABEL[a.kind] ?? 'Attachment'),
         status: x.status,
         statusDetail: x.status_detail,
         route: x.route,
@@ -205,9 +205,9 @@ export async function setStatus(db: Db, ctx: TenantContext, conversationId: stri
 /** Hides phone, IC and email numbers so a conversation can be shared for review. */
 export function redactPersonal(text: string): string {
   return text
-    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[emel]')
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
     .replace(/\b\d{6}-?\d{2}-?\d{4}\b/g, '[IC]')
-    .replace(/\+?\d[\d\s-]{7,}\d/g, '[nombor]');
+    .replace(/\+?\d[\d\s-]{7,}\d/g, '[number]');
 }
 
 export interface ReviewExport {

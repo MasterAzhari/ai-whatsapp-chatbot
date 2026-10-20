@@ -4,7 +4,7 @@ import { actionError, db, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
 
-const PROVIDER = { official: 'Rasmi (Cloud API)', qr: 'QR (tidak rasmi)', mock: 'MOCK (ujian)' } as const;
+const PROVIDER = { official: 'Official (Cloud API)', qr: 'QR (unofficial)', mock: 'MOCK (test)' } as const;
 
 export default async function Connections({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -26,15 +26,15 @@ export default async function Connections({ params }: { params: Promise<{ slug: 
 
   return (
     <>
-      <h1>Sambungan WhatsApp</h1>
+      <h1>WhatsApp connections</h1>
       <div className="notice">
-        Mod QR (seperti WhatsApp Web) bukan sambungan rasmi Meta. Ada risiko nombor disekat, jadi guna nombor ujian atau nombor yang hang sanggup tanggung risikonya.
-        Sambungan rasmi (Cloud API) akan datang dalam Fasa 3.
+        QR mode (like WhatsApp Web) is not an official Meta connection. The number may get banned, so use a test number or one you are willing to risk.
+        Official connection (Cloud API) is coming in Phase 3.
       </div>
       <div className="panel">
         <table>
           <thead>
-            <tr><th>Nama</th><th>Jenis</th><th>Status</th><th>Automasi</th><th>AI</th></tr>
+            <tr><th>Name</th><th>Type</th><th>Status</th><th>Automation</th><th>AI</th></tr>
           </thead>
           <tbody>
             {channels.map((c) => (
@@ -42,8 +42,8 @@ export default async function Connections({ params }: { params: Promise<{ slug: 
                 <td>{c.provider === 'qr' && isAdmin ? <a href={`/w/${slug}/connections/${c.id}`}>{c.name}</a> : c.name}</td>
                 <td>{PROVIDER[c.provider as keyof typeof PROVIDER] ?? c.provider}</td>
                 <td><span className={`badge ${c.status === 'connected' ? 'ok' : 'warn'}`}>{c.status}</span></td>
-                <td>{c.automationEnabled ? 'Hidup' : 'Mati'}</td>
-                <td>{c.aiEnabled ? 'Hidup' : 'Mati'}</td>
+                <td>{c.automationEnabled ? 'On' : 'Off'}</td>
+                <td>{c.aiEnabled ? 'On' : 'Off'}</td>
               </tr>
             ))}
           </tbody>
@@ -52,8 +52,8 @@ export default async function Connections({ params }: { params: Promise<{ slug: 
       {isAdmin && (
         <div className="panel" style={{ marginTop: 24 }}>
           <form action={addQr} className="form">
-            <label>Nama channel QR baru<input name="name" required maxLength={80} placeholder="Contoh: WhatsApp ujian" /></label>
-            <button className="primary" type="submit">Tambah channel QR</button>
+            <label>New QR channel name<input name="name" required maxLength={80} placeholder="Example: Test WhatsApp" /></label>
+            <button className="primary" type="submit">Add QR channel</button>
           </form>
         </div>
       )}

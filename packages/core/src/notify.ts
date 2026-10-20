@@ -38,11 +38,11 @@ export async function notifyStaff(tx: Tx, tenantId: string, conversationId: stri
   const quote = r.last_text ? (r.last_text.length > MAX_QUOTE ? `${r.last_text.slice(0, MAX_QUOTE)}…` : r.last_text) : null;
   const base = (process.env.APP_PUBLIC_URL ?? '').replace(/\/$/, '');
   const text = [
-    '🔔 *Chat perlu staf*',
-    `Customer: ${r.display_name ?? 'Tanpa nama'}${r.phone_e164 ? ` (${r.phone_e164})` : ''}`,
-    `Sebab: ${reason}`,
-    quote ? `Mesej: "${quote}"` : '',
-    base ? `Buka chat: ${base}/w/${r.slug}/inbox/${conversationId}` : '',
+    '🔔 *Chat needs staff*',
+    `Customer: ${r.display_name ?? 'No name'}${r.phone_e164 ? ` (${r.phone_e164})` : ''}`,
+    `Reason: ${reason}`,
+    quote ? `Message: "${quote}"` : '',
+    base ? `Open chat: ${base}/w/${r.slug}/inbox/${conversationId}` : '',
   ].filter(Boolean).join('\n');
   let n = 0;
   for (const num of s.notifyNumbers) {

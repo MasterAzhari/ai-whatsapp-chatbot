@@ -12,7 +12,7 @@ async function run(path: string, fn: () => Promise<{ rulesAdded: number; rulesRe
   let done = '';
   try {
     const r = await fn();
-    done = `${target}: ${r.rulesAdded} keyword ditambah${r.rulesRemoved ? `, ${r.rulesRemoved} keyword lama dibuang` : ''}`;
+    done = `${target}: ${r.rulesAdded} keywords added${r.rulesRemoved ? `, ${r.rulesRemoved} old keywords removed` : ''}`;
   } catch (err) {
     msg = actionError(err);
   }
@@ -36,17 +36,17 @@ export default async function Template({ params, searchParams }: { params: Promi
     await run(
       path,
       async () => {
-        if (!(file instanceof File) || file.size === 0) throw new Error('Pilih fail template (.json) dulu.');
-        if (file.size > MAX_FILE_BYTES) throw new Error('Fail terlalu besar untuk template bot.');
+        if (!(file instanceof File) || file.size === 0) throw new Error('Choose a template file (.json) first.');
+        if (file.size > MAX_FILE_BYTES) throw new Error('File is too large for a bot template.');
         let json: unknown;
         try {
           json = JSON.parse(await file.text());
         } catch {
-          throw new Error('Fail ini bukan JSON yang sah.');
+          throw new Error('This file is not valid JSON.');
         }
         return importBotTemplate(db(), ctx, json, { replaceRules: f.get('replace') === 'on' });
       },
-      'Workspace ini',
+      'This workspace',
     );
   }
   async function copyTo(f: FormData) {
@@ -65,48 +65,48 @@ export default async function Template({ params, searchParams }: { params: Promi
 
   return (
     <>
-      <h1>Salin tetapan bot</h1>
+      <h1>Copy bot settings</h1>
       {sp.error && <div className="error">{sp.error}</div>}
-      {sp.saved && <div className="notice">Disalin. {sp.saved}.</div>}
+      {sp.saved && <div className="notice">Copied. {sp.saved}.</div>}
       <p className="small muted">
-        Template mengandungi persona, arahan AI, model, lengah balasan dan semua keyword. Kunci API, sambungan WhatsApp, kenalan dan perbualan tidak disalin; setiap agent masukkan kunci API sendiri.
+        The template holds the persona, AI instructions, model, reply delay and all keywords. API keys, WhatsApp connections, contacts and conversations are not copied; each agent enters their own API key.
       </p>
 
-      <h2 className="small muted">1. Muat turun template workspace ini</h2>
+      <h2 className="small muted">1. Download this workspace's template</h2>
       <div className="panel" style={{ marginBottom: 24 }}>
         <div className="form">
-          <a className="button primary" href={`${path}/export`}>Muat turun template ({current?.name})</a>
-          <div className="small muted">Hantar fail ini kepada agent. Mereka import di halaman ini dalam workspace mereka.</div>
+          <a className="button primary" href={`${path}/export`}>Download template ({current?.name})</a>
+          <div className="small muted">Send this file to the agent. They import it on this page in their workspace.</div>
         </div>
       </div>
 
       {targets.length > 0 && (
         <>
-          <h2 className="small muted">2. Salin terus ke workspace agent</h2>
+          <h2 className="small muted">2. Copy straight to an agent's workspace</h2>
           <div className="panel" style={{ marginBottom: 24 }}>
             <form action={copyTo} className="form">
               <label>
-                Workspace tujuan
+                Target workspace
                 <select name="target" required>
                   {targets.map((w) => <option key={w.slug} value={w.slug}>{w.name}</option>)}
                 </select>
               </label>
-              <label className="check"><input type="checkbox" name="replace" /> Buang keyword sedia ada di workspace tujuan dulu</label>
-              <button className="primary" type="submit">Salin tetapan ke sana</button>
+              <label className="check"><input type="checkbox" name="replace" /> Remove existing keywords in the target workspace first</label>
+              <button className="primary" type="submit">Copy settings there</button>
             </form>
           </div>
         </>
       )}
 
-      <h2 className="small muted">{targets.length > 0 ? '3' : '2'}. Import template ke workspace ini</h2>
+      <h2 className="small muted">{targets.length > 0 ? '3' : '2'}. Import a template into this workspace</h2>
       <div className="panel">
         <form action={importFile} className="form">
           <label>
-            Fail template (.json)
+            Template file (.json)
             <input type="file" name="file" accept="application/json,.json" required />
           </label>
-          <label className="check"><input type="checkbox" name="replace" /> Buang semua keyword sedia ada dulu (jika tidak, keyword sama nama diganti dan yang lain kekal)</label>
-          <div className="small muted">Tetapan bot workspace ini akan diganti dengan isi template.</div>
+          <label className="check"><input type="checkbox" name="replace" /> Remove all existing keywords first (otherwise keywords with the same name are replaced and the rest stay)</label>
+          <div className="small muted">This workspace's bot settings will be replaced with the template contents.</div>
           <button className="primary" type="submit">Import</button>
         </form>
       </div>

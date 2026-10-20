@@ -61,10 +61,10 @@ export const RuleInput = z
     imageAssetId: z.string().uuid().nullable().default(null),
   })
   .refine((r) => r.replyText || r.setLabel || r.handover || r.imageAssetId || r.aiReply, 'a rule needs a reply, a picture, a label, handover or AI')
-  .refine((r) => !r.imageAssetId || (splitBubbles(r.replyText ?? '')[0] ?? '').length <= MAX_CAPTION, `balasan bersama gambar maksimum ${MAX_CAPTION} aksara`);
+  .refine((r) => !r.imageAssetId || (splitBubbles(r.replyText ?? '')[0] ?? '').length <= MAX_CAPTION, `reply with a picture can be at most ${MAX_CAPTION} characters`);
 
 async function checkImage(tx: Tx, id: string | null) {
-  if (id && !(await tx.query('SELECT 1 FROM media_assets WHERE id = $1', [id])).rowCount) throw new Error('gambar tidak dijumpai');
+  if (id && !(await tx.query('SELECT 1 FROM media_assets WHERE id = $1', [id])).rowCount) throw new Error('picture not found');
 }
 
 export async function createKeywordRule(db: Db, ctx: TenantContext, input: z.input<typeof RuleInput>, source: 'web' | 'mcp' = 'web') {
@@ -141,8 +141,8 @@ export async function saveImageAsset(db: Db, ctx: TenantContext, mimeType: strin
 }
 
 export async function insertImage(tx: Tx, tenantId: string, mimeType: string, data: Buffer): Promise<string> {
-  if (!(IMAGE_TYPES as readonly string[]).includes(mimeType)) throw new Error('gambar mesti JPG, PNG atau WebP');
-  if (!data.length || data.length > MAX_IMAGE_BYTES) throw new Error('gambar mesti 5 MB atau kurang');
+  if (!(IMAGE_TYPES as readonly string[]).includes(mimeType)) throw new Error('picture must be JPG, PNG or WebP');
+  if (!data.length || data.length > MAX_IMAGE_BYTES) throw new Error('picture must be 5 MB or less');
   const { rows } = await tx.query<{ id: string }>(
     'INSERT INTO media_assets (tenant_id, mime_type, bytes, data) VALUES ($1, $2, $3, $4) RETURNING id',
     [tenantId, mimeType, data.length, data],

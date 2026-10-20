@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 import { runPlayground, sendAsMockCustomer, type PlaygroundState } from './actions';
 
-const ROUTE = { none: 'Tiada balasan automatik', stop: 'Berhenti (opt-out)', human: 'Serah kepada manusia', keyword: 'Keyword', media: 'Voice/gambar: minta taip', ai: 'AI' } as const;
+const ROUTE = { none: 'No automatic reply', stop: 'Stop (opt-out)', human: 'Hand over to human', keyword: 'Keyword', media: 'Voice/picture: ask to type', ai: 'AI' } as const;
 
 export function PlaygroundForm({ slug, channels }: { slug: string; channels: Array<{ id: string; name: string; provider: string }> }) {
   const [state, action, pending] = useActionState<PlaygroundState, FormData>(runPlayground, {});
@@ -18,10 +18,10 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
             {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
-        <label>Mesej pelanggan<textarea name="text" rows={3} required maxLength={4096} defaultValue={state.text} /></label>
-        <label className="check"><input type="checkbox" name="callAi" /> Panggil AI sebenar jika tiada keyword padan (guna token)</label>
-        <label className="check"><input type="checkbox" name="isLead" defaultChecked /> Anggap chat ini sudah lead (untuk mod &quot;Layan lead sahaja&quot;)</label>
-        <button className="primary" type="submit" disabled={pending}>{pending ? 'Menguji…' : 'Uji'}</button>
+        <label>Customer message<textarea name="text" rows={3} required maxLength={4096} defaultValue={state.text} /></label>
+        <label className="check"><input type="checkbox" name="callAi" /> Call the real AI if no keyword matches (uses tokens)</label>
+        <label className="check"><input type="checkbox" name="isLead" defaultChecked /> Treat this chat as a lead (for &quot;Leads only&quot; mode)</label>
+        <button className="primary" type="submit" disabled={pending}>{pending ? 'Testing…' : 'Test'}</button>
       </form>
       {(state.route || state.error) && (
         <div className="result">
@@ -32,14 +32,14 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
               {state.route.bubbles.map((b, i) => (
                 <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>
                   {i === 0 && state.route!.imageAssetId && (
-                    <img src={`/w/${slug}/media/${state.route!.imageAssetId}`} alt="Gambar" style={{ display: 'block', maxWidth: 240, borderRadius: 8, marginBottom: 6 }} />
+                    <img src={`/w/${slug}/media/${state.route!.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8, marginBottom: 6 }} />
                   )}
                   {b}
                 </div>
               ))}
               {state.route.bubbles.length === 0 && state.route.imageAssetId && (
                 <div className="bubble outbound" style={{ marginTop: 8 }}>
-                  <img src={`/w/${slug}/media/${state.route.imageAssetId}`} alt="Gambar" style={{ display: 'block', maxWidth: 240, borderRadius: 8 }} />
+                  <img src={`/w/${slug}/media/${state.route.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8 }} />
                 </div>
               )}
             </>
@@ -48,11 +48,11 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
             (state.ai.ok ? (
               <>
                 {state.ai.bubbles?.map((b, i) => <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>{b}</div>)}
-                {state.ai.handover && <div className="small" style={{ marginTop: 8 }}><b>Serah kepada staf</b> · {state.ai.handover} (staf dapat notifikasi)</div>}
+                {state.ai.handover && <div className="small" style={{ marginTop: 8 }}><b>Hand over to staff</b> · {state.ai.handover} (staff get notified)</div>}
                 <div className="small muted">{state.ai.tokens}</div>
               </>
             ) : (
-              <div className="error">AI gagal ({state.ai.reason}): {state.ai.detail}</div>
+              <div className="error">AI failed ({state.ai.reason}): {state.ai.detail}</div>
             ))}
         </div>
       )}
@@ -60,14 +60,14 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
         <form action={sendAsMockCustomer} className="form" style={{ borderTop: '1px solid var(--border)' }}>
           <input type="hidden" name="slug" value={slug} />
           <div className="small muted">
-            Atau hantar sebagai pelanggan ujian ke channel MOCK. Mesej melalui laluan sebenar (simpan, routing, outbox) dan dipaparkan dalam Inbox. Tiada apa dihantar ke WhatsApp.
+            Or send as a test customer to a MOCK channel. The message goes through the real path (store, routing, outbox) and shows in the Inbox. Nothing is sent to WhatsApp.
           </div>
           <label>
             Channel MOCK
             <select name="channelId">{mock.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           </label>
-          <label>Mesej<textarea name="text" rows={2} required maxLength={4096} /></label>
-          <button type="submit">Hantar sebagai pelanggan ujian</button>
+          <label>Message<textarea name="text" rows={2} required maxLength={4096} /></label>
+          <button type="submit">Send as test customer</button>
         </form>
       )}
     </div>

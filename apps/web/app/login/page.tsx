@@ -25,17 +25,17 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <form action={doLogin} className="login">
       <div className="brand">MasterBot</div>
-      <h1>Log masuk</h1>
-      {error && <div className="error">Email atau kata laluan salah.</div>}
+      <h1>Log in</h1>
+      {error && <div className="error">Wrong email or password.</div>}
       <label>
         Email
         <input type="email" name="email" required autoComplete="username" />
       </label>
       <label>
-        Kata laluan
+        Password
         <input type="password" name="password" required autoComplete="current-password" />
       </label>
-      <button className="primary" type="submit">Log masuk</button>
+      <button className="primary" type="submit">Log in</button>
     </form>
   );
 }

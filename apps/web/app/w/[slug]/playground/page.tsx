@@ -14,8 +14,8 @@ export default async function Playground({ params }: { params: Promise<{ slug: s
     <>
       <h1>Playground</h1>
       <p className="small muted">
-        Lihat apa bot akan buat dengan satu mesej: berhenti, minta manusia, keyword atau AI. Ujian ini tidak menyimpan mesej dan tidak menghantar apa-apa.
-        Suis automasi dianggap hidup supaya peraturan boleh diuji sebelum dihidupkan.
+        See what the bot will do with one message: stop, ask for a human, keyword or AI. This test does not store the message or send anything.
+        Automation switches are treated as on so rules can be tested before they are switched on.
       </p>
       <PlaygroundForm slug={slug} channels={channels} />
     </>
