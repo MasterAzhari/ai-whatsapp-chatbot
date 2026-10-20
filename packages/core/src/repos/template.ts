@@ -12,7 +12,8 @@ import { loadSettings, SETTINGS_COLUMNS, SettingsUpdate } from './settings.js';
  */
 export const TEMPLATE_FORMAT = 'chatbot-bot-template';
 
-const TemplateSettings = SettingsUpdate.omit({ expectedVersion: true });
+// Staff numbers belong to one workspace, so they never travel in a template.
+const TemplateSettings = SettingsUpdate.omit({ expectedVersion: true, notifyNumbers: true });
 const TemplateRule = z.object({
   name: z.string(),
   matchType: z.enum(['exact', 'phrase']),
@@ -41,7 +42,7 @@ export type BotTemplate = z.infer<typeof BotTemplate>;
 export async function exportBotTemplate(db: Db, ctx: TenantContext, sourceName?: string): Promise<BotTemplate> {
   requireRole(ctx, 'admin');
   return inTenant(db, ctx, async (tx) => {
-    const { version: _v, ...settings } = await loadSettings(tx, ctx.tenantId);
+    const { version: _v, notifyNumbers: _n, ...settings } = await loadSettings(tx, ctx.tenantId);
     const rules = await loadRules(tx);
     return {
       format: TEMPLATE_FORMAT,

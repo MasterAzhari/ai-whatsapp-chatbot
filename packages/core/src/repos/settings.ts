@@ -38,6 +38,7 @@ export interface BotSettings {
   followupStartHour: number; // Malaysia time; follow-ups only go out from this hour...
   followupEndHour: number; // ...until this hour
   followupInstruction: string;
+  notifyNumbers: string[]; // staff WhatsApp numbers (60123456789) alerted when a chat needs a person
 }
 
 function fromRow(r: Record<string, any>): BotSettings {
@@ -68,6 +69,7 @@ function fromRow(r: Record<string, any>): BotSettings {
     followupStartHour: r.followup_start_hour,
     followupEndHour: r.followup_end_hour,
     followupInstruction: r.followup_instruction,
+    notifyNumbers: r.notify_numbers ?? [],
   };
 }
 
@@ -96,6 +98,12 @@ export async function getBotSettings(
 
 const keywordList = z.array(z.string().trim().min(1).max(100)).max(50);
 
+/** Malaysian mobile number in any common spelling (012-345 6789, +6012...) → "60123456789". */
+const staffNumber = z
+  .string()
+  .transform((v) => v.replace(/\D/g, '').replace(/^0/, '60'))
+  .pipe(z.string().regex(/^601\d{7,9}$/, 'nombor telefon Malaysia tidak sah'));
+
 export const SettingsUpdate = z.object({
   expectedVersion: z.number().int(),
   personaName: z.string().trim().min(1).max(80).optional(),
@@ -123,6 +131,7 @@ export const SettingsUpdate = z.object({
   followupStartHour: z.number().int().min(0).max(23).optional(),
   followupEndHour: z.number().int().min(1).max(24).optional(),
   followupInstruction: z.string().trim().max(2000).optional(),
+  notifyNumbers: z.array(staffNumber).max(3).optional(),
 });
 
 export const SETTINGS_COLUMNS: Record<string, string> = {
@@ -151,6 +160,7 @@ export const SETTINGS_COLUMNS: Record<string, string> = {
   followupStartHour: 'followup_start_hour',
   followupEndHour: 'followup_end_hour',
   followupInstruction: 'followup_instruction',
+  notifyNumbers: 'notify_numbers',
 };
 
 /** Random wait before an automated reply, from the tenant's pacing settings. */

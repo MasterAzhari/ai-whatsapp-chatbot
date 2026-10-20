@@ -4,6 +4,7 @@ import { claimJobs, finishJob } from './jobs.js';
 import { routeInbound, type RouterDeps } from './routing/router.js';
 import { ROUTE_JOB } from './routing/receive.js';
 import { followupOnce } from './followup.js';
+import { notifyOnce } from './notify.js';
 
 export interface WorkerOptions {
   intervalMs?: number;
@@ -53,8 +54,9 @@ export function startWorker(db: Db, resolve: AdapterResolver, opts: WorkerOption
           followups = await followupOnce(db, opts.router, log);
         }
         const c = await drainOnce(db, resolve);
-        const total = routed + followups + Object.values(c).reduce((a, b) => a + b, 0);
-        if (total) log(`routed ${routed}, follow-ups ${followups}, outbox ${JSON.stringify(c)}`);
+        const alerts = await notifyOnce(db, resolve, log);
+        const total = routed + followups + alerts + Object.values(c).reduce((a, b) => a + b, 0);
+        if (total) log(`routed ${routed}, follow-ups ${followups}, staff alerts ${alerts}, outbox ${JSON.stringify(c)}`);
         if (total) continue; // more may be due
       } catch (err) {
         log(`error: ${(err as Error).message}`);

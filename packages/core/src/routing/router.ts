@@ -4,6 +4,7 @@ import type { AIProvider, ChatTurn, GenerateReplyResult } from '../ai/provider.j
 import { cancelPendingAutomated, enqueueBubbles, enqueueReply } from '../outbox.js';
 import { loadRules } from '../repos/keywords.js';
 import { loadSettings, replyDelayMs, type BotSettings } from '../repos/settings.js';
+import { isStaffNumber, notifyStaff } from '../notify.js';
 import { matchPattern, pickRule, type KeywordRule } from './match.js';
 
 /**
@@ -119,7 +120,7 @@ async function loadContext(tx: Tx, messageId: string) {
     `SELECT m.id, m.body, m.attachments, m.direction, m.route, m.conversation_id, m.created_at,
             c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at, c.contact_id, c.channel_id,
             ch.automation_enabled, ch.ai_enabled AS channel_ai,
-            ct.opted_out_at IS NOT NULL AS opted_out,
+            ct.opted_out_at IS NOT NULL AS opted_out, ct.phone_e164,
             EXISTS (SELECT 1 FROM messages n WHERE n.conversation_id = m.conversation_id AND n.direction = 'inbound'
                      AND (n.created_at, n.id) > (m.created_at, m.id)) AS superseded
        FROM messages m
@@ -266,6 +267,11 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         (r) => [r.rule_id as string, r.last_hit_at as Date],
       ),
     );
+    // A staff member answering one of the bot's alerts is not a customer.
+    if (isStaffNumber(m.phone_e164, settings.notifyNumbers)) {
+      await setRoute(tx, messageId, { route: 'none', reason: 'nombor staf (notifikasi); bot tidak membalas' });
+      return 'none';
+    }
     const aiAllowed = settings.aiEnabled && !!settings.aiModel && (m.conv_ai ?? m.channel_ai) === true;
     const d = decide({
       text: m.body ?? '',
@@ -293,6 +299,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       case 'human':
         await handOver(tx, m.conversation_id);
         if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover'), delayMs: replyDelayMs(settings) });
+        await notifyStaff(tx, tenantId, m.conversation_id, 'Customer minta cakap dengan staf', key('notify'));
         await setRoute(tx, messageId, d);
         return 'human';
       case 'media': {
@@ -319,6 +326,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
+        if (d.handover) await notifyStaff(tx, tenantId, m.conversation_id, d.setLabel ? `${d.ruleName} (label ${d.setLabel})` : d.ruleName, key('notify'));
         // A lead keyword after the window has passed (a new ad click) starts a new window.
         if (d.startsLead && !leadActive(m.lead_started_at, settings.leadDays)) {
           await tx.query('UPDATE conversations SET lead_started_at = now() WHERE id = $1', [m.conversation_id]);
@@ -405,6 +413,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       return 'ai_fallback';
     }
     await handOver(tx, m.conversation_id);
+    await notifyStaff(tx, tenantId, m.conversation_id, 'AI tak dapat jawab', key('notify'));
     await setRoute(tx, messageId, { route: 'human', reason: `AI gagal (${result.reason}: ${result.detail}); diserahkan kepada manusia` });
     return 'ai_handover';
   });

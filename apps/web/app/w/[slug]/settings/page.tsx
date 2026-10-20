@@ -82,6 +82,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
           followupStartHour: Number(f.get('followupStartHour')),
           followupEndHour: Number(f.get('followupEndHour')),
           followupInstruction: String(f.get('followupInstruction') ?? ''),
+          notifyNumbers: [1, 2, 3].map((i) => opt(`notifyNumber${i}`)).filter((v): v is string => v != null),
         }),
       'settings',
     );
@@ -251,6 +252,18 @@ export default async function Settings({ params, searchParams }: { params: Promi
           </label>
           <div className="small muted">
             Bila pelanggan tak balas mesej bot, AI hantar follow-up ikut masa di atas, paling banyak 3 kali, kemudian berhenti sehingga pelanggan mesej semula. Kosongkan kotak untuk kurangkan bilangan. Tiada follow-up untuk chat yang staf sedang kendalikan, perlu staf, selesai, berlabel Rejected, atau pelanggan minta dihubungi kemudian. Hanya chat yang dibalas bot selepas suis ini dihidupkan.
+          </div>
+          <h3 className="small muted">Notifikasi staf (WhatsApp)</h3>
+          <div className="row">
+            {[0, 1, 2].map((i) => (
+              <label key={i}>
+                Nombor staf {i + 1}
+                <input name={`notifyNumber${i + 1}`} type="tel" placeholder="0123456789" maxLength={20} defaultValue={s.notifyNumbers[i] ? `0${s.notifyNumbers[i]!.slice(2)}` : ''} />
+              </label>
+            ))}
+          </div>
+          <div className="small muted">
+            Bila chat perlu staf (customer minta staf, keyword serah kepada staf seperti borang diisi, atau AI tak dapat jawab), bot hantar WhatsApp ke nombor ini dengan nama customer, nombor dan link ke chat. Mesej daripada nombor staf tidak dibalas bot. Nombor ini tidak disalin dalam template.
           </div>
           <label>Keyword berhenti (mesej tepat, satu setiap baris)<textarea name="stopKeywords" rows={3} defaultValue={s.stopKeywords.join('\n')} /></label>
           <label>Keyword minta manusia (frasa, satu setiap baris)<textarea name="humanKeywords" rows={3} defaultValue={s.humanKeywords.join('\n')} /></label>

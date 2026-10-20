@@ -13,6 +13,8 @@ services:
       # Non-superuser role created by deploy/pibot/create-db.sql inside typebot-db.
       DATABASE_URL: postgres://chatbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@typebot-db:5432/chatbot
       GATEWAY_URL: http://chatbot-gateway:3100
+      # Link in staff WhatsApp alerts.
+      APP_PUBLIC_URL: https://${APP_HOST:-bot.pibot.io}
     labels:
       # caddy-gen issues the HTTPS certificate and routes bot.pibot.io here.
       virtual.host: ${APP_HOST:-bot.pibot.io}

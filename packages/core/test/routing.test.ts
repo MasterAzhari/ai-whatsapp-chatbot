@@ -25,6 +25,8 @@ import { exportBotTemplate, importBotTemplate } from '../src/repos/template.js';
 import { redactPersonal } from '../src/repos/conversations.js';
 import { changeOwnName, changeOwnPassword, countDemoData, createAgentWorkspace, listAgentWorkspaces, purgeDemoData, renameWorkspace, resetAgentPassword, setAgentDisabled } from '../src/repos/agents.js';
 import { followupOnce, DEFAULT_FOLLOWUPS } from '../src/followup.js';
+import { notifyOnce } from '../src/notify.js';
+import { SettingsUpdate } from '../src/repos/settings.js';
 import { freshDb } from './helpers.js';
 
 // ------------------------------------------------------------------ pure parts
@@ -64,7 +66,7 @@ const baseSettings: BotSettings = {
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
   fallbackReply: null, handoverReply: 'Staf akan balas', mediaReply: 'Sila taip', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
   replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false, leadMode: false, leadDays: 30,
-  followupEnabled: false, followupGapsMin: [60, 180, 600], followupStartHour: 8, followupEndHour: 23, followupInstruction: '',
+  followupEnabled: false, followupGapsMin: [60, 180, 600], followupStartHour: 8, followupEndHour: 23, followupInstruction: '', notifyNumbers: [],
 };
 
 describe('decide order', () => {
@@ -898,5 +900,49 @@ describe('conversation review export', () => {
       'Nama Ali, IC [IC], tel [nombor], [emel]. Combo D 1.0+1.5HP RM220, poskod 08000',
     );
     assert.equal(redactPersonal('+60123456789 / 900101075555'), '[nombor] / [IC]');
+  });
+});
+
+describe('staff alerts on WhatsApp', () => {
+  let tN: string, chN: string;
+  before(async () => {
+    tN = await createTenant(db, { slug: 'ntf', name: 'N' });
+    chN = await createChannel(db, tN, { name: 'N', provider: 'mock', status: 'connected', automationEnabled: true });
+    await withTenant(db, tN, async (tx) => {
+      await tx.query("INSERT INTO bot_settings (tenant_id, reply_delay_min_sec, reply_delay_max_sec, notify_numbers) VALUES ($1, 0, 0, '{60123456789}')", [tN]);
+      await tx.query(
+        `INSERT INTO keyword_rules (tenant_id, name, match_type, patterns, reply_text, set_label, handover, priority)
+         VALUES ($1, 'Borang diterima', 'phrase', '{form pendaftaran}', 'Terima kasih Cik!', 'Borang diisi', true, 1)`,
+        [tN],
+      );
+    });
+  });
+
+  test('staff numbers accept common spellings and reject others', () => {
+    assert.deepEqual(SettingsUpdate.parse({ expectedVersion: 1, notifyNumbers: ['012-345 6789', '+60 11-2345 6789'] }).notifyNumbers, ['60123456789', '601123456789']);
+    assert.throws(() => SettingsUpdate.parse({ expectedVersion: 1, notifyNumbers: ['12345'] }));
+  });
+
+  test('a form sent back hands over and alerts staff once; staff replies are not answered', async () => {
+    const r = (await receiveInbound(db, tN, chN, {
+      type: 'message', providerMessageId: randomUUID(), providerIdentity: 'cust-ntf', phoneE164: '+60199998888', profileName: 'Siti',
+      text: 'FORM PENDAFTARAN\nNAMA: Siti\nPAKEJ AIRCOND: Combo D', timestamp: new Date(),
+    })) as { messageId: string; conversationId: string };
+    assert.equal(await routeInbound(db, tN, r.messageId, { aiFor: async () => null }), 'keyword');
+    const before = adapter.sent.length;
+    assert.equal(await notifyOnce(db, resolveAdapter), 1);
+    assert.equal(await notifyOnce(db, resolveAdapter), 0);
+    const alert = adapter.sent.slice(before);
+    assert.equal(alert.length, 1);
+    assert.equal(alert[0]!.to, '60123456789@s.whatsapp.net');
+    assert.match(alert[0]!.text, /Siti \(\+60199998888\)/);
+    assert.match(alert[0]!.text, /Borang diterima \(label Borang diisi\)/);
+    const conv = await withTenant(db, tN, (tx) => tx.query('SELECT human_takeover, status FROM conversations WHERE id = $1', [r.conversationId]));
+    assert.deepEqual(conv.rows[0], { human_takeover: true, status: 'pending_human' });
+
+    const staff = (await receiveInbound(db, tN, chN, {
+      type: 'message', providerMessageId: randomUUID(), providerIdentity: 'staff-ntf', phoneE164: '+60123456789', text: 'ok noted', timestamp: new Date(),
+    })) as { messageId: string };
+    assert.equal(await routeInbound(db, tN, staff.messageId, { aiFor: async () => null }), 'none');
   });
 });

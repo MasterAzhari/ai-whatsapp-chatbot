@@ -29,3 +29,4 @@ export * from './routing/ai-resolver.js';
 export * from './routing/playground.js';
 export * from './repos/channels.js';
 export * from './followup.js';
+export * from './notify.js';
