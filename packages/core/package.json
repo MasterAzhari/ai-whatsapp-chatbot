@@ -24,6 +24,7 @@
     "worker": "node dist/src/cli/worker.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "pg": "8.16.3",
     "zod": "3.25.76"
   },

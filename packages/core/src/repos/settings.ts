@@ -4,13 +4,20 @@ import { inTenant, requireRole, type TenantContext } from '../auth.js';
 import { decryptSecret, encryptSecret, maskSecret } from '../secrets.js';
 import { audit } from './audit.js';
 
+export const AI_PROVIDERS = ['gemini', 'anthropic'] as const;
+export type AiProviderId = (typeof AI_PROVIDERS)[number];
+
+/** Where each provider's API key is stored in credential_references. */
+export const KEY_KIND: Record<AiProviderId, string> = { gemini: 'gemini_api_key', anthropic: 'anthropic_api_key' };
+export type CredentialKind = 'gemini_api_key' | 'anthropic_api_key';
+
 export interface BotSettings {
   version: number;
   personaName: string;
   language: string;
   systemInstruction: string;
   aiEnabled: boolean;
-  aiProvider: 'gemini';
+  aiProvider: AiProviderId;
   aiModel: string | null;
   maxOutputTokens: number;
   temperature: number | null;
@@ -55,11 +62,19 @@ export async function loadSettings(tx: Tx, tenantId: string): Promise<BotSetting
   return fromRow(rows[0]!);
 }
 
-export async function getBotSettings(db: Db, ctx: TenantContext): Promise<BotSettings & { aiKeyMasked: string | null }> {
+export async function getBotSettings(
+  db: Db,
+  ctx: TenantContext,
+): Promise<BotSettings & { aiKeyMasked: string | null; keysMasked: Record<AiProviderId, string | null> }> {
   return inTenant(db, ctx, async (tx) => {
     const s = await loadSettings(tx, ctx.tenantId);
-    const key = await readCredential(tx, 'gemini_api_key');
-    return { ...s, aiKeyMasked: key ? maskSecret(key) : null };
+    const keysMasked = {} as Record<AiProviderId, string | null>;
+    for (const p of AI_PROVIDERS) {
+      const key = await readCredential(tx, KEY_KIND[p]);
+      keysMasked[p] = key ? maskSecret(key) : null;
+    }
+    // aiKeyMasked: the key of the provider currently selected.
+    return { ...s, aiKeyMasked: keysMasked[s.aiProvider], keysMasked };
   });
 }
 
@@ -71,6 +86,7 @@ export const SettingsUpdate = z.object({
   language: z.string().trim().min(2).max(10).optional(),
   systemInstruction: z.string().max(8000).optional(),
   aiEnabled: z.boolean().optional(),
+  aiProvider: z.enum(AI_PROVIDERS).optional(),
   aiModel: z.string().trim().regex(/^[a-z0-9][a-z0-9.\-]{1,80}$/i, 'invalid model id').nullable().optional(),
   maxOutputTokens: z.number().int().min(16).max(8192).optional(),
   temperature: z.number().min(0).max(2).nullable().optional(),
@@ -90,6 +106,7 @@ const COLUMNS: Record<string, string> = {
   language: 'language',
   systemInstruction: 'system_instruction',
   aiEnabled: 'ai_enabled',
+  aiProvider: 'ai_provider',
   aiModel: 'ai_model',
   maxOutputTokens: 'max_output_tokens',
   temperature: 'temperature',
@@ -156,7 +173,7 @@ export async function readCredential(tx: Tx, kind: string): Promise<string | nul
 }
 
 /** Stores a provider secret encrypted. The value is never returned to the caller again. */
-export async function setCredential(db: Db, ctx: TenantContext, kind: 'gemini_api_key', value: string | null): Promise<void> {
+export async function setCredential(db: Db, ctx: TenantContext, kind: CredentialKind, value: string | null): Promise<void> {
   requireRole(ctx, 'admin');
   await inTenant(db, ctx, async (tx) => {
     if (value === null || value.trim() === '') {

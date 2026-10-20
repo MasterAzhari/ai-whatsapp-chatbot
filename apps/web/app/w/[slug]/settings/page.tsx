@@ -1,8 +1,18 @@
 import { redirect } from 'next/navigation';
-import { createAiResolver, getBotSettings, getDashboard, setChannelSwitches, setCredential, updateBotSettings } from '@chatbot/core';
+import { AI_PROVIDERS, KEY_KIND, createAiResolver, getBotSettings, getDashboard, setChannelSwitches, setCredential, updateBotSettings } from '@chatbot/core';
 import { actionError, db, lines, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
+
+const PROVIDER_LABEL = { gemini: 'Gemini (Google)', anthropic: 'Claude (Anthropic)' } as const;
+
+/** Maps the submitted provider field to its credential kind; rejects anything else. */
+function keyKind(f: FormData) {
+  const p = String(f.get('provider'));
+  const provider = AI_PROVIDERS.find((x) => x === p);
+  if (!provider) throw new Error('unknown provider');
+  return KEY_KIND[provider] as 'gemini_api_key' | 'anthropic_api_key';
+}
 
 /** Runs a change, then returns to the page with an error or a saved notice. */
 async function run(path: string, fn: () => Promise<unknown>, done: string) {
@@ -50,6 +60,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
           language: String(f.get('language') ?? 'ms'),
           systemInstruction: String(f.get('systemInstruction') ?? ''),
           aiEnabled: f.get('aiEnabled') === 'on',
+          aiProvider: String(f.get('aiProvider')) as 'gemini' | 'anthropic',
           aiModel: opt('aiModel'),
           maxOutputTokens: Number(f.get('maxOutputTokens')),
           temperature: temp == null ? null : Number(temp),
@@ -69,12 +80,12 @@ export default async function Settings({ params, searchParams }: { params: Promi
   async function saveKey(f: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await run(path, () => setCredential(db(), ctx, 'gemini_api_key', String(f.get('key') ?? '')), 'key');
+    await run(path, () => setCredential(db(), ctx, keyKind(f), String(f.get('key') ?? '')), 'key');
   }
-  async function clearKey() {
+  async function clearKey(f: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await run(path, () => setCredential(db(), ctx, 'gemini_api_key', null), 'key');
+    await run(path, () => setCredential(db(), ctx, keyKind(f), null), 'key');
   }
   async function switches(f: FormData) {
     'use server';
@@ -96,26 +107,34 @@ export default async function Settings({ params, searchParams }: { params: Promi
       {sp.saved && <div className="notice">Disimpan.</div>}
       {!aiReady && (
         <div className="notice">
-          AI belum aktif. Perlu: kunci API Gemini, model dipilih, suis AI workspace hidup, dan suis AI pada channel. Keyword tetap berfungsi tanpa AI.
+          AI belum aktif. Perlu: kunci API untuk penyedia yang dipilih, model dipilih, suis AI workspace hidup, dan suis AI pada channel. Keyword tetap berfungsi tanpa AI.
         </div>
       )}
 
-      <h2 className="small muted">Kunci API Gemini</h2>
-      <div className="panel" style={{ marginBottom: 24 }}>
-        <div className="form">
-          <div>Status: {s.aiKeyMasked ? <span className="badge ok">Disimpan ({s.aiKeyMasked})</span> : <span className="badge warn">Tiada</span>}</div>
-          <form action={saveKey} className="form" style={{ padding: 0 }}>
-            <label>
-              Kunci baru (disimpan bersulit; tidak akan dipaparkan semula)
-              <input type="password" name="key" autoComplete="off" required minLength={10} maxLength={500} />
-            </label>
-            <button className="primary" type="submit">Simpan kunci</button>
-          </form>
-          {s.aiKeyMasked && (
-            <form action={clearKey}><button className="danger" type="submit">Buang kunci</button></form>
-          )}
+      {AI_PROVIDERS.map((p) => (
+        <div key={p}>
+          <h2 className="small muted">Kunci API {PROVIDER_LABEL[p]}{p === s.aiProvider ? ' (sedang digunakan)' : ''}</h2>
+          <div className="panel" style={{ marginBottom: 24 }}>
+            <div className="form">
+              <div>Status: {s.keysMasked[p] ? <span className="badge ok">Disimpan ({s.keysMasked[p]})</span> : <span className="badge warn">Tiada</span>}</div>
+              <form action={saveKey} className="form" style={{ padding: 0 }}>
+                <input type="hidden" name="provider" value={p} />
+                <label>
+                  Kunci baru (disimpan bersulit; tidak akan dipaparkan semula)
+                  <input type="password" name="key" autoComplete="off" required minLength={10} maxLength={500} />
+                </label>
+                <button className="primary" type="submit">Simpan kunci</button>
+              </form>
+              {s.keysMasked[p] && (
+                <form action={clearKey}>
+                  <input type="hidden" name="provider" value={p} />
+                  <button className="danger" type="submit">Buang kunci</button>
+                </form>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      ))}
 
       <h2 className="small muted">Suis channel</h2>
       <div className="panel" style={{ marginBottom: 24 }}>
@@ -150,6 +169,13 @@ export default async function Settings({ params, searchParams }: { params: Promi
           </div>
           <label className="check"><input type="checkbox" name="aiEnabled" defaultChecked={s.aiEnabled} /> AI hidup untuk workspace ini</label>
           <label>
+            Penyedia AI
+            <select name="aiProvider" defaultValue={s.aiProvider}>
+              {AI_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
+            </select>
+          </label>
+          <div className="small muted">Bila tukar penyedia, tukar juga model (contoh Claude: claude-haiku-5-5; Gemini: gemini-3.5-flash-lite).</div>
+          <label>
             Model
             <input name="aiModel" list="models" maxLength={80} defaultValue={s.aiModel ?? ''} placeholder="Pilih dari senarai model" />
           </label>
@@ -162,14 +188,14 @@ export default async function Settings({ params, searchParams }: { params: Promi
             {s.aiKeyMasked ? (
               models ? <span className="muted">{models.length} model tersedia untuk kunci ini. Taip untuk cari.</span>
               : modelsError ? <span className="error">Gagal dapatkan senarai model: {modelsError}</span>
-              : <a href={`${path}?models=1`}>Muat senarai model dari Gemini</a>
+              : <a href={`${path}?models=1`}>Muat senarai model dari {PROVIDER_LABEL[s.aiProvider]}</a>
             ) : (
               <span className="muted">Simpan kunci API dulu untuk lihat senarai model.</span>
             )}
           </div>
           <div className="row">
             <label>Had token jawapan<input name="maxOutputTokens" type="number" min={16} max={8192} defaultValue={s.maxOutputTokens} /></label>
-            <label>Temperature (kosong = lalai)<input name="temperature" type="number" min={0} max={2} step="0.1" defaultValue={s.temperature ?? ''} /></label>
+            <label>Temperature (Gemini sahaja; kosong = lalai)<input name="temperature" type="number" min={0} max={2} step="0.1" defaultValue={s.temperature ?? ''} /></label>
           </div>
           <div className="row">
             <label>Bilangan mesej sejarah<input name="historyTurns" type="number" min={1} max={50} defaultValue={s.historyTurns} /></label>

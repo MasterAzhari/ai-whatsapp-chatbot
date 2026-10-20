@@ -10,6 +10,7 @@ import { getConversation, takeOver } from '../src/repos/conversations.js';
 import { MockChannelAdapter } from '../src/channels/mock.js';
 import { MockAIProvider, type AIProvider, type GenerateReplyInput, type GenerateReplyResult } from '../src/ai/provider.js';
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
+import { AnthropicProvider, toMessages } from '../src/ai/anthropic.js';
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
 import { decide, routeInbound } from '../src/routing/router.js';
 import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
@@ -76,6 +77,45 @@ describe('decide order', () => {
     assert.equal(d({ text: 'harga' }).route, 'keyword');
     assert.equal(d({ text: 'hello' }).route, 'ai');
     assert.equal(d({ text: 'hello', aiAllowed: false }).route, 'none');
+  });
+});
+
+describe('claude adapter', () => {
+  const input: GenerateReplyInput = {
+    model: 'claude-haiku-5-5', systemInstruction: 'sys', history: [{ role: 'assistant', text: 'old' }, { role: 'customer', text: 'a' }, { role: 'customer', text: 'b' }],
+    knowledge: ['Acson 1.0HP'], maxOutputTokens: 50, temperature: 0.7, timeoutMs: 1000,
+  };
+  const reply = (status: number, json: unknown, cap?: { url?: string; init?: RequestInit }) =>
+    (async (url: string, init: RequestInit) => {
+      if (cap) { cap.url = String(url); cap.init = init; }
+      return new Response(JSON.stringify(json), { status, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+  const ok = {
+    id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', stop_reason: 'end_turn',
+    content: [{ type: 'text', text: 'Hai Cik!' }], usage: { input_tokens: 20, output_tokens: 4 },
+  };
+  test('sends key in header, merges turns, no sampling params, reads usage', async () => {
+    const cap: { url?: string; init?: RequestInit } = {};
+    const r = await new AnthropicProvider('sk-ant-test-123', reply(200, ok, cap), 'https://x.test').generateReply(input);
+    assert.deepEqual(r, { ok: true, text: 'Hai Cik!', usage: { inputTokens: 20, outputTokens: 4 }, model: 'claude-haiku-5-5', latencyMs: (r as any).latencyMs });
+    assert.equal(cap.url, 'https://x.test/v1/messages');
+    assert.ok(!cap.url!.includes('sk-ant'));
+    assert.equal(new Headers(cap.init!.headers as HeadersInit).get('x-api-key'), 'sk-ant-test-123');
+    const body = JSON.parse(String(cap.init!.body));
+    assert.deepEqual(body.messages, [{ role: 'user', content: 'a\nb' }]);
+    assert.equal(body.temperature, undefined);
+    assert.deepEqual(body.thinking, { type: 'disabled' });
+    assert.match(body.system, /Acson 1\.0HP/);
+  });
+  test('maps rate limit, missing model and empty answers', async () => {
+    const c = (f: typeof fetch) => new AnthropicProvider('k-123456789', f, 'https://x.test').generateReply(input);
+    const err = (type: string) => ({ type: 'error', error: { type, message: type } });
+    assert.equal(((await c(reply(429, err('rate_limit_error')))) as any).reason, 'quota');
+    assert.equal(((await c(reply(404, err('not_found_error')))) as any).reason, 'invalid_model');
+    assert.equal(((await c(reply(200, { ...ok, content: [], stop_reason: 'refusal' }))) as any).reason, 'blocked');
+  });
+  test('toMessages opens with the customer', () => {
+    assert.equal(toMessages([{ role: 'assistant', text: 'x' }]).length, 0);
   });
 });
 
@@ -343,6 +383,19 @@ describe('settings, rules and isolation', () => {
     assert.ok(!JSON.stringify(audit.rows).includes('AIza'));
     assert.ok((await createAiResolver(db)(tA)) instanceof GeminiProvider);
     assert.equal(await createAiResolver(db)(tB), null);
+  });
+
+  test('selected provider decides which key and adapter are used', async () => {
+    await setCredential(db, ctxA, 'anthropic_api_key', 'sk-ant-FAKE-for-tests-0001');
+    const s = await getBotSettings(db, ctxA);
+    assert.ok(s.keysMasked.anthropic && !s.keysMasked.anthropic.includes('FAKE-for-tests'));
+    assert.ok((await createAiResolver(db)(tA)) instanceof GeminiProvider);
+    const after = await updateBotSettings(db, ctxA, { expectedVersion: s.version, aiProvider: 'anthropic', aiModel: 'claude-haiku-5-5' });
+    assert.equal(after.aiProvider, 'anthropic');
+    assert.ok((await createAiResolver(db)(tA)) instanceof AnthropicProvider);
+    await setCredential(db, ctxA, 'anthropic_api_key', null);
+    assert.equal(await createAiResolver(db)(tA), null);
+    await assert.rejects(updateBotSettings(db, ctxA, { expectedVersion: after.version, aiProvider: 'openai' as any }));
   });
 
   test('tenant B sees none of tenant A rules, settings, hits or usage', async () => {

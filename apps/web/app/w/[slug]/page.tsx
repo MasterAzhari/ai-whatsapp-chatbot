@@ -66,7 +66,7 @@ export default async function Dashboard({ params }: { params: Promise<{ slug: st
         </table>
       </div>
       <p className="small muted">
-        Token ialah angka yang dilaporkan Gemini{usage.some((u) => u.unreportedCalls > 0) ? '; sesetengah panggilan tiada data token dan tidak dikira' : ''}. Kos ialah anggaran
+        Token ialah angka yang dilaporkan penyedia AI{usage.some((u) => u.unreportedCalls > 0) ? '; sesetengah panggilan tiada data token dan tidak dikira' : ''}. Kos ialah anggaran
         daripada jadual kadar, bukan invois. Bil sebenar ada di Google AI Studio.
       </p>
     </>
