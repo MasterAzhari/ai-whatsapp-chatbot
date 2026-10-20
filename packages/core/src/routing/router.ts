@@ -42,7 +42,7 @@ export function decide(d: DecisionInput): Route {
   // Lead mode: until a lead keyword arrives, the bot stays silent and staff answer.
   if (d.settings.leadMode && !d.isLead) {
     const lead = pickRule(d.text, d.rules.filter((r) => r.startsLead), { channelId: d.channelId });
-    if (!lead) return { route: 'none', reason: 'bukan lead (tiada keyword lead); staf jawab sendiri' };
+    if (!lead) return { route: 'none', reason: 'bukan lead, atau tempoh lead sudah tamat; staf jawab sendiri' };
     return keywordRoute(lead.rule, lead.pattern);
   }
 
@@ -98,7 +98,7 @@ interface Snapshot {
 async function loadContext(tx: Tx, messageId: string) {
   const { rows } = await tx.query(
     `SELECT m.id, m.body, m.direction, m.route, m.conversation_id, m.created_at,
-            c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at IS NOT NULL AS is_lead, c.contact_id, c.channel_id,
+            c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at, c.contact_id, c.channel_id,
             ch.automation_enabled, ch.ai_enabled AS channel_ai,
             ct.opted_out_at IS NOT NULL AS opted_out,
             EXISTS (SELECT 1 FROM messages n WHERE n.conversation_id = m.conversation_id AND n.direction = 'inbound'
@@ -111,6 +111,12 @@ async function loadContext(tx: Tx, messageId: string) {
     [messageId],
   );
   return rows[0];
+}
+
+/** A chat is a lead from its lead keyword until leadDays have passed (0 = no limit). */
+export function leadActive(startedAt: Date | null, leadDays: number, now = new Date()): boolean {
+  if (!startedAt) return false;
+  return leadDays === 0 || now.getTime() - startedAt.getTime() < leadDays * 86_400_000;
 }
 
 async function setRoute(tx: Tx, messageId: string, route: Record<string, unknown>) {
@@ -158,7 +164,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       automationEnabled: m.automation_enabled,
       humanTakeover: m.human_takeover,
       optedOut: m.opted_out,
-      isLead: m.is_lead,
+      isLead: leadActive(m.lead_started_at, settings.leadDays),
       aiAllowed,
       settings,
       rules,
@@ -187,7 +193,10 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: replyDelayMs(settings) });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
-        if (d.startsLead) await tx.query('UPDATE conversations SET lead_started_at = coalesce(lead_started_at, now()) WHERE id = $1', [m.conversation_id]);
+        // A lead keyword after the window has passed (a new ad click) starts a new window.
+        if (d.startsLead && !leadActive(m.lead_started_at, settings.leadDays)) {
+          await tx.query('UPDATE conversations SET lead_started_at = now() WHERE id = $1', [m.conversation_id]);
+        }
         await tx.query(
           `INSERT INTO keyword_rule_hits (tenant_id, conversation_id, rule_id, last_hit_at) VALUES ($1, $2, $3, now())
            ON CONFLICT (conversation_id, rule_id) DO UPDATE SET last_hit_at = now()`,

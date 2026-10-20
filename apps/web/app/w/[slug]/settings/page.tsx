@@ -74,6 +74,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
           replyDelayMaxSec: Number(f.get('replyDelayMaxSec')),
           typingIndicator: f.get('typingIndicator') === 'on',
           leadMode: f.get('leadMode') === 'on',
+          leadDays: Number(f.get('leadDays')),
         }),
       'settings',
     );
@@ -170,7 +171,8 @@ export default async function Settings({ params, searchParams }: { params: Promi
           </div>
           <label className="check"><input type="checkbox" name="aiEnabled" defaultChecked={s.aiEnabled} /> AI hidup untuk workspace ini</label>
           <label className="check"><input type="checkbox" name="leadMode" defaultChecked={s.leadMode} /> Layan lead sahaja</label>
-          <div className="small muted">Bila hidup, bot dan AI hanya membalas chat yang bermula dengan keyword lead (contoh teks iklan &quot;Saya nak info Aircond&quot;). Chat lain, seperti team atau kawan, tidak dibalas; anda jawab sendiri. Tanda keyword lead di halaman Keyword.</div>
+          <label>Tempoh layan setiap lead (hari dari keyword lead pertama; 0 = tiada had)<input name="leadDays" type="number" min={0} max={365} defaultValue={s.leadDays} /></label>
+          <div className="small muted">Bila hidup, bot dan AI hanya membalas chat yang bermula dengan keyword lead (contoh teks iklan &quot;Saya nak info Aircond&quot;). Chat lain, seperti team atau kawan, tidak dibalas; anda jawab sendiri. Selepas tempoh tamat, bot berhenti untuk lead itu sehingga dia hantar keyword lead semula. Tanda keyword lead di halaman Keyword.</div>
           <label>
             Penyedia AI
             <select name="aiProvider" defaultValue={s.aiProvider}>

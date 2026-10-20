@@ -31,6 +31,7 @@ export interface BotSettings {
   replyDelayMaxSec: number;
   typingIndicator: boolean;
   leadMode: boolean;
+  leadDays: number; // 0 = no limit
 }
 
 function fromRow(r: Record<string, any>): BotSettings {
@@ -54,6 +55,7 @@ function fromRow(r: Record<string, any>): BotSettings {
     replyDelayMaxSec: r.reply_delay_max_sec,
     typingIndicator: r.typing_indicator,
     leadMode: r.lead_mode,
+    leadDays: r.lead_days,
   };
 }
 
@@ -102,6 +104,7 @@ export const SettingsUpdate = z.object({
   replyDelayMaxSec: z.number().int().min(0).max(120).optional(),
   typingIndicator: z.boolean().optional(),
   leadMode: z.boolean().optional(),
+  leadDays: z.number().int().min(0).max(365).optional(),
 });
 
 export const SETTINGS_COLUMNS: Record<string, string> = {
@@ -123,6 +126,7 @@ export const SETTINGS_COLUMNS: Record<string, string> = {
   replyDelayMaxSec: 'reply_delay_max_sec',
   typingIndicator: 'typing_indicator',
   leadMode: 'lead_mode',
+  leadDays: 'lead_days',
 };
 
 /** Random wait before an automated reply, from the tenant's pacing settings. */

@@ -12,7 +12,7 @@ import { MockAIProvider, type AIProvider, type GenerateReplyInput, type Generate
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
 import { AnthropicProvider, toMessages } from '../src/ai/anthropic.js';
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
-import { decide, routeInbound } from '../src/routing/router.js';
+import { decide, leadActive, routeInbound } from '../src/routing/router.js';
 import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
 import { addQrChannel, connectQrChannel, qrChannelStatus } from '../src/repos/channels.js';
 import { routeOnce } from '../src/worker.js';
@@ -61,7 +61,7 @@ const baseSettings: BotSettings = {
   version: 1, personaName: 'Bot', language: 'ms', systemInstruction: '', aiEnabled: true, aiProvider: 'gemini',
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
   fallbackReply: null, handoverReply: 'Staf akan balas', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
-  replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false, leadMode: false,
+  replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false, leadMode: false, leadDays: 30,
 };
 
 describe('decide order', () => {
@@ -83,6 +83,14 @@ describe('decide order', () => {
     assert.ok(lead.route === 'keyword' && lead.startsLead);
     assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'harga' }).route, 'keyword');
     assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'hello' }).route, 'ai');
+  });
+  test('lead window', () => {
+    const now = new Date('2026-10-20T00:00:00Z');
+    const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+    assert.equal(leadActive(null, 30, now), false);
+    assert.equal(leadActive(daysAgo(29), 30, now), true);
+    assert.equal(leadActive(daysAgo(31), 30, now), false);
+    assert.equal(leadActive(daysAgo(400), 0, now), true);
   });
   test('stop, then human, then keyword, then AI', () => {
     assert.equal(d({ text: 'STOP' }).route, 'stop');
@@ -254,6 +262,12 @@ describe('routing', () => {
       assert.equal(await routeInbound(db, tA, (await inbound('Saya nak info Aircond', from)).messageId, deps), 'keyword');
       assert.equal(await routeInbound(db, tA, (await inbound('boleh hantar ke Kedah?', from)).messageId, deps), 'ai_reply');
       assert.equal(ai.calls, 1);
+      // 30 days later the bot stands down; a new lead keyword starts a new window
+      const conv = (await inbound('masih ada promo?', from)).conversationId;
+      await withTenant(db, tA, (tx) => tx.query("UPDATE conversations SET lead_started_at = now() - interval '31 days' WHERE id = $1", [conv]));
+      assert.equal(await routeInbound(db, tA, (await inbound('masih ada promo?', from)).messageId, deps), 'none');
+      assert.equal(await routeInbound(db, tA, (await inbound('Saya nak info aircond', from)).messageId, deps), 'keyword');
+      assert.equal(await routeInbound(db, tA, (await inbound('ok terima kasih', from)).messageId, deps), 'ai_reply');
     } finally {
       while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
       await settings({ leadMode: false });
