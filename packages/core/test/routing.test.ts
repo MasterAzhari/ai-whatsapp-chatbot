@@ -320,12 +320,14 @@ describe('routing', () => {
   });
 
   test('voice note is turned into text, then answered like a typed message; bytes are not kept', async () => {
-    const voice = [{ kind: 'audio' as const, mimeType: 'audio/ogg; codecs=opus', data: Buffer.from('fake-opus').toString('base64') }];
+    const bytes = Buffer.from('fake-opus '.repeat(40)); // longer than one 76-char base64 line
+    const voice = [{ kind: 'audio' as const, mimeType: 'audio/ogg; codecs=opus', data: bytes.toString('base64') }];
     const v = await inbound('', `voice-${randomUUID()}`, voice);
     ai.result = { ok: true, text: 'Berapa harga aircond 1.5HP?', usage: { inputTokens: 50, outputTokens: 8 }, model: 'gemini-test', latencyMs: 5 };
     assert.equal(await routeInbound(db, tA, v.messageId, deps), 'keyword'); // "harga" rule answers the transcript
     assert.equal(ai.calls, 1);
     assert.equal(ai.lastInput!.history[0]!.media!.mimeType, 'audio/ogg'); // codec suffix dropped for the AI API
+    assert.equal(ai.lastInput!.history[0]!.media!.data, bytes.toString('base64')); // exact bytes, no line breaks
     const c = await getConversation(db, ctxA, v.conversationId);
     assert.equal(c!.messages[0]!.body, '🎤 Berapa harga aircond 1.5HP?');
     assert.equal(c!.conversation.status, 'open');

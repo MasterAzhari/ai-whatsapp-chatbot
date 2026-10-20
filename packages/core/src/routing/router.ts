@@ -294,13 +294,14 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         await setRoute(tx, messageId, d);
         return 'human';
       case 'media': {
-        const mm = (await tx.query<{ kind: 'audio' | 'image'; mime_type: string; data: string }>(
-          `SELECT kind, mime_type, encode(data, 'base64') AS data FROM message_media WHERE message_id = $1`,
+        // Base64 in JS: Postgres encode(..., 'base64') wraps lines, which the AI APIs reject.
+        const mm = (await tx.query<{ kind: 'audio' | 'image'; mime_type: string; data: Buffer }>(
+          'SELECT kind, mime_type, data FROM message_media WHERE message_id = $1',
           [messageId],
         )).rows[0];
         // Claude reads pictures but not voice notes; Gemini reads both.
         if (mm && aiAllowed && (mm.kind === 'image' || settings.aiProvider === 'gemini')) {
-          return { transcribe: true, conversationId: m.conversation_id, kind: mm.kind, media: { mimeType: mm.mime_type, data: mm.data }, settings, reply: d.reply };
+          return { transcribe: true, conversationId: m.conversation_id, kind: mm.kind, media: { mimeType: mm.mime_type, data: mm.data.toString('base64') }, settings, reply: d.reply };
         }
         await mediaFallback(tx, tenantId, m.conversation_id, messageId, d, settings, !m.superseded);
         return 'media';
