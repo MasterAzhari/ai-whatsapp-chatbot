@@ -1,3 +1,4 @@
+import './log-filter.js'; // must stay first: hides libsignal session dumps
 import { readdir } from 'node:fs/promises';
 import { createGatewayServer } from './app.js';
 import { MockSessionDriver, SessionManager, type SessionDriver } from './sessions.js';
