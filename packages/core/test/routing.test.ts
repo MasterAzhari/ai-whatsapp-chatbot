@@ -11,7 +11,7 @@ import { MockChannelAdapter } from '../src/channels/mock.js';
 import { MockAIProvider, type AIProvider, type GenerateReplyInput, type GenerateReplyResult } from '../src/ai/provider.js';
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
-import { decide, routeInbound } from '../src/routing/router.js';
+import { decide, replyDelayMs, routeInbound } from '../src/routing/router.js';
 import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
 import { addQrChannel, connectQrChannel, qrChannelStatus } from '../src/repos/channels.js';
 import { routeOnce } from '../src/worker.js';
@@ -57,8 +57,27 @@ describe('matcher', () => {
 const baseSettings: BotSettings = {
   version: 1, personaName: 'Bot', language: 'ms', systemInstruction: '', aiEnabled: true, aiProvider: 'gemini',
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
-  fallbackReply: null, handoverReply: 'Staf akan balas', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
+  fallbackReply: null, handoverReply: 'Staf akan balas', replyDelayMinMs: 0, replyDelayMaxMs: 0,
+  stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
 };
+
+describe('reply delay', () => {
+  const s = { replyDelayMinMs: 3000, replyDelayMaxMs: 10000 };
+  const mid = () => 0.5; // no jitter
+  test('off when max is 0', () => {
+    assert.equal(replyDelayMs({ replyDelayMinMs: 0, replyDelayMaxMs: 0 }, 'x'.repeat(500)), 0);
+  });
+  test('longer text waits longer, within min and max', () => {
+    assert.equal(replyDelayMs(s, 'ok', 0, mid), 3120);
+    assert.equal(replyDelayMs(s, 'x'.repeat(50), 0, mid), 6000);
+    assert.equal(replyDelayMs(s, 'x'.repeat(1000), 0, mid), 10000);
+    assert.equal(replyDelayMs(s, '', 0, () => 0), 3000);
+  });
+  test('time already spent counts toward the delay', () => {
+    assert.equal(replyDelayMs(s, 'x'.repeat(50), 4000, mid), 2000);
+    assert.equal(replyDelayMs(s, 'ok', 60000, mid), 0);
+  });
+});
 
 describe('decide order', () => {
   const d = (o: Partial<Parameters<typeof decide>[0]>) =>
@@ -289,6 +308,27 @@ describe('routing', () => {
     assert.equal(await routeInbound(db, tA, m1.messageId, deps), 'none');
     assert.equal(await routeInbound(db, tA, m2.messageId, deps), 'ai_reply');
     assert.equal(ai.calls, 1);
+  });
+
+  test('reply delay holds the reply; a newer message replaces a waiting AI reply', async () => {
+    await settings({ replyDelayMinMs: 60000, replyDelayMaxMs: 60000 });
+    try {
+      const from = `cust-${randomUUID()}`;
+      const m1 = await inbound('soalan satu', from);
+      assert.equal(await routeInbound(db, tA, m1.messageId, deps), 'ai_reply');
+      await drainOnce(db, resolveAdapter);
+      assert.deepEqual((await outbound(m1.conversationId)).map((o) => o.status), ['queued']);
+      const due = await withTenant(db, tA, (tx) =>
+        tx.query("SELECT extract(epoch FROM next_attempt_at - now()) AS s FROM outbox WHERE conversation_id = $1", [m1.conversationId]));
+      assert.ok(Number(due.rows[0].s) > 50);
+
+      const m2 = await inbound('soalan dua', from);
+      assert.equal(await routeInbound(db, tA, m2.messageId, deps), 'ai_reply');
+      assert.deepEqual(ai.lastInput?.history.map((t) => t.text), ['soalan satu', 'soalan dua']);
+      assert.deepEqual((await outbound(m1.conversationId)).map((o) => o.status), ['failed', 'queued']);
+    } finally {
+      await settings({ replyDelayMinMs: 0, replyDelayMaxMs: 0 });
+    }
   });
 
   test('channel AI switch off means no AI', async () => {

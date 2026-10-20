@@ -69,6 +69,23 @@ export const AI_GUARDRAILS = [
   '- Keep replies short and in the customer\'s language.',
 ].join('\n');
 
+/**
+ * How long to hold an automated reply so it reads like someone typing it: the
+ * minimum plus ~60 ms per character, jittered, capped at the maximum, less the time
+ * already spent since the customer's message arrived. Max 0 = send at once.
+ */
+export function replyDelayMs(
+  s: Pick<BotSettings, 'replyDelayMinMs' | 'replyDelayMaxMs'>,
+  text: string,
+  elapsedMs = 0,
+  rand: () => number = Math.random,
+): number {
+  if (s.replyDelayMaxMs <= 0) return 0;
+  const typing = (s.replyDelayMinMs + text.length * 60) * (0.85 + rand() * 0.3);
+  const target = Math.min(s.replyDelayMaxMs, Math.max(s.replyDelayMinMs, typing));
+  return Math.max(0, Math.round(target - elapsedMs));
+}
+
 export interface RouterDeps {
   /** Returns the AI provider for a tenant (with its decrypted key), or null if not configured. */
   aiFor(tenantId: string): Promise<AIProvider | null>;
@@ -154,6 +171,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     });
 
     const key = (suffix: string) => `${suffix}:${messageId}`;
+    const delayMs = (text: string) => replyDelayMs(settings, text, Date.now() - new Date(m.created_at).getTime());
     switch (d.route) {
       case 'none':
         await setRoute(tx, messageId, d);
@@ -164,7 +182,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         return 'stop';
       case 'human':
         await handOver(tx, m.conversation_id);
-        if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover') });
+        if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover'), delayMs: delayMs(d.reply) });
         await setRoute(tx, messageId, d);
         return 'human';
       case 'keyword':
@@ -172,7 +190,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         // (origin system), which takeover does not block.
         if (d.handover) await handOver(tx, m.conversation_id);
         if (d.reply) {
-          await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw') });
+          await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: delayMs(d.reply) });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
         await tx.query(
@@ -188,6 +206,18 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           await setRoute(tx, messageId, { route: 'none', reason: 'mesej lebih baru tiba; AI jawab mesej itu' });
           return 'none';
         }
+        // An earlier AI reply still waiting out its delay would answer a stale
+        // question; this one answers with the full context instead.
+        await tx.query(
+          `WITH c AS (
+             UPDATE outbox o SET state = 'cancelled', updated_at = now(), last_error = 'cancelled: superseded by newer message'
+               FROM messages r
+              WHERE o.message_id = r.id AND o.conversation_id = $1 AND o.state = 'pending' AND r.origin = 'ai'
+             RETURNING o.message_id)
+           UPDATE messages SET status = 'failed', status_detail = 'cancelled: superseded by newer message'
+            WHERE id IN (SELECT message_id FROM c)`,
+          [m.conversation_id],
+        );
         // Compare timestamps inside SQL: a JS Date drops microseconds, which would
         // exclude the very message being answered.
         const hist = await tx.query(
@@ -244,14 +274,15 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       return 'ai_discarded';
     }
     const key = (suffix: string) => `${suffix}:${messageId}`;
+    const delayMs = (text: string) => replyDelayMs(s, text, Date.now() - new Date(m.created_at).getTime());
     if (result.ok) {
-      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: result.text, origin: 'ai', idempotencyKey: key('ai') });
+      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: result.text, origin: 'ai', idempotencyKey: key('ai'), delayMs: delayMs(result.text) });
       await setRoute(tx, messageId, { route: 'ai', reason: 'tiada keyword padan', model: result.model, latencyMs: result.latencyMs, usage: result.usage });
       return 'ai_reply';
     }
     // AI failed (timeout, quota, invalid model...): fixed fallback, or hand over to a human.
     if (s.fallbackReply) {
-      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: s.fallbackReply, origin: 'system', idempotencyKey: key('fallback') });
+      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: s.fallbackReply, origin: 'system', idempotencyKey: key('fallback'), delayMs: delayMs(s.fallbackReply) });
       await setRoute(tx, messageId, { route: 'ai', reason: `AI gagal (${result.reason}: ${result.detail}); balasan sandaran dihantar` });
       return 'ai_fallback';
     }

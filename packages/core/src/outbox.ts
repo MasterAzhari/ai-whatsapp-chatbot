@@ -10,6 +10,7 @@ export interface EnqueueReplyInput {
   authorUserId?: string;
   idempotencyKey: string;
   expiresInMs?: number; // automated replies go stale; human replies default to 24h
+  delayMs?: number; // hold the reply this long before the worker may send it
 }
 
 /**
@@ -37,11 +38,12 @@ export async function enqueueReply(tx: Tx, input: EnqueueReplyInput): Promise<{ 
     [input.tenantId, input.conversationId, channelId, input.origin, input.text, input.authorUserId ?? null],
   );
   const messageId = msg.rows[0]!.id;
+  const delay = Math.max(0, Math.round(input.delayMs ?? 0));
   const ttl = input.expiresInMs ?? (input.origin === 'human' ? 24 * 3600_000 : 15 * 60_000);
   await tx.query(
-    `INSERT INTO outbox (tenant_id, channel_id, conversation_id, message_id, idempotency_key, expires_at)
-     VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' milliseconds')::interval)`,
-    [input.tenantId, channelId, input.conversationId, messageId, input.idempotencyKey, String(ttl)],
+    `INSERT INTO outbox (tenant_id, channel_id, conversation_id, message_id, idempotency_key, expires_at, next_attempt_at)
+     VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' milliseconds')::interval, now() + ($7 || ' milliseconds')::interval)`,
+    [input.tenantId, channelId, input.conversationId, messageId, input.idempotencyKey, String(ttl + delay), String(delay)],
   );
   await tx.query('UPDATE conversations SET last_message_at = now() WHERE id = $1', [input.conversationId]);
   return { messageId, duplicate: false };

@@ -55,6 +55,8 @@ export default async function Settings({ params, searchParams }: { params: Promi
           temperature: temp == null ? null : Number(temp),
           historyTurns: Number(f.get('historyTurns')),
           aiTimeoutMs: Math.round(Number(f.get('aiTimeoutSec')) * 1000),
+          replyDelayMinMs: Math.round(Number(f.get('replyDelayMinSec') || 0) * 1000),
+          replyDelayMaxMs: Math.round(Number(f.get('replyDelayMaxSec') || 0) * 1000),
           fallbackReply: opt('fallbackReply'),
           handoverReply: opt('handoverReply'),
           stopKeywords: lines(f.get('stopKeywords')),
@@ -171,6 +173,13 @@ export default async function Settings({ params, searchParams }: { params: Promi
           <div className="row">
             <label>Bilangan mesej sejarah<input name="historyTurns" type="number" min={1} max={50} defaultValue={s.historyTurns} /></label>
             <label>Had masa AI (saat)<input name="aiTimeoutSec" type="number" min={1} max={120} defaultValue={s.aiTimeoutMs / 1000} /></label>
+          </div>
+          <div className="row">
+            <label>Lewat balas minimum (saat)<input name="replyDelayMinSec" type="number" min={0} max={120} step="0.5" defaultValue={s.replyDelayMinMs / 1000} /></label>
+            <label>Lewat balas maksimum (saat)<input name="replyDelayMaxSec" type="number" min={0} max={120} step="0.5" defaultValue={s.replyDelayMaxMs / 1000} /></label>
+          </div>
+          <div className="small muted">
+            Balasan automatik ditahan sebentar supaya nampak seperti ditaip orang: jawapan lebih panjang tunggu lebih lama, dalam julat ini. 0 dan 0 = hantar serta-merta.
           </div>
           <label>
             Balasan bila AI gagal (kosong = serah terus kepada manusia)

@@ -18,6 +18,8 @@ export interface BotSettings {
   aiTimeoutMs: number;
   fallbackReply: string | null;
   handoverReply: string | null;
+  replyDelayMinMs: number;
+  replyDelayMaxMs: number;
   stopKeywords: string[];
   humanKeywords: string[];
 }
@@ -37,6 +39,8 @@ function fromRow(r: Record<string, any>): BotSettings {
     aiTimeoutMs: r.ai_timeout_ms,
     fallbackReply: r.fallback_reply,
     handoverReply: r.handover_reply,
+    replyDelayMinMs: r.reply_delay_min_ms,
+    replyDelayMaxMs: r.reply_delay_max_ms,
     stopKeywords: r.stop_keywords,
     humanKeywords: r.human_keywords,
   };
@@ -72,6 +76,8 @@ export const SettingsUpdate = z.object({
   aiTimeoutMs: z.number().int().min(1000).max(120000).optional(),
   fallbackReply: z.string().trim().max(1000).nullable().optional(),
   handoverReply: z.string().trim().max(1000).nullable().optional(),
+  replyDelayMinMs: z.number().int().min(0).max(120000).optional(),
+  replyDelayMaxMs: z.number().int().min(0).max(120000).optional(),
   stopKeywords: keywordList.optional(),
   humanKeywords: keywordList.optional(),
 });
@@ -88,6 +94,8 @@ const COLUMNS: Record<string, string> = {
   aiTimeoutMs: 'ai_timeout_ms',
   fallbackReply: 'fallback_reply',
   handoverReply: 'handover_reply',
+  replyDelayMinMs: 'reply_delay_min_ms',
+  replyDelayMaxMs: 'reply_delay_max_ms',
   stopKeywords: 'stop_keywords',
   humanKeywords: 'human_keywords',
 };
