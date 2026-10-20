@@ -1,8 +1,8 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, generateMessageIDV2, useMultiFileAuthState, type WASocket } from 'baileys';
+import makeWASocket, { Browsers, DisconnectReason, downloadMediaMessage, fetchLatestBaileysVersion, generateMessageIDV2, useMultiFileAuthState, type WAMessage, type WASocket } from 'baileys';
 import type { InboundSink, SessionDriver } from './sessions.js';
-import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid, type GatewayEvent } from './normalize.js';
+import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid, READABLE_MEDIA, readableAttachment, type GatewayEvent } from './normalize.js';
 
 type State = ReturnType<SessionDriver['status']>;
 
@@ -29,6 +29,8 @@ export class BaileysSessionDriver implements SessionDriver {
   private readonly sentByKey = new Map<string, string>();
   /** Ids of messages this gateway sent, so their echoes are not mistaken for a person typing on the phone. */
   private readonly ownIds = new Set<string>();
+  /** Inbound batches are handled one at a time so a media download never reorders messages. */
+  private inbound: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly channelId: string,
@@ -90,17 +92,43 @@ export class BaileysSessionDriver implements SessionDriver {
       }
     });
     sock.ev.on('messages.upsert', ({ messages, type }) => {
-      const events = messages
-        .filter((m) => !(m.key.fromMe && m.key.id && this.ownIds.has(m.key.id)))
-        // Messages typed on the business phone may arrive as 'append'; recent ones are live, not history.
-        .map((m) => normalizeMessage(m as any, type !== 'notify' && !isLiveOwnMessage(m as any)))
-        .filter((e): e is GatewayEvent => !!e);
-      if (events.length) void this.sink(this.channelId, events);
+      this.inbound = this.inbound
+        .then(async () => {
+          const events: GatewayEvent[] = [];
+          for (const m of messages) {
+            if (m.key.fromMe && m.key.id && this.ownIds.has(m.key.id)) continue;
+            // Messages typed on the business phone may arrive as 'append'; recent ones are live, not history.
+            const e = normalizeMessage(m as any, type !== 'notify' && !isLiveOwnMessage(m as any));
+            if (!e) continue;
+            await this.attachMedia(sock, m, e);
+            events.push(e);
+          }
+          if (events.length) await this.sink(this.channelId, events);
+        })
+        .catch((err) => console.log(`[gateway ${this.channelId.slice(0, 8)}] inbound failed: ${(err as Error).message}`));
     });
     sock.ev.on('messages.update', (updates) => {
       const events = updates.map((u) => normalizeStatus(u as any)).filter((e): e is GatewayEvent => !!e);
       if (events.length) void this.sink(this.channelId, events);
     });
+  }
+
+  /**
+   * Downloads a customer's voice note or picture so the app can turn it into text.
+   * Best effort: on failure or timeout the message still goes through without it.
+   */
+  private async attachMedia(sock: WASocket, raw: WAMessage, e: GatewayEvent) {
+    const a = readableAttachment(e);
+    if (!a) return;
+    try {
+      const buf = await Promise.race([
+        downloadMediaMessage(raw, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage, logger: quietLogger(this.channelId.slice(0, 8)) }),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('download timed out')), 20_000).unref()),
+      ]);
+      if (buf.length <= (READABLE_MEDIA[a.kind] ?? 0)) a.data = buf.toString('base64');
+    } catch (err) {
+      console.log(`[gateway ${this.channelId.slice(0, 8)}] media download failed: ${(err as Error).message}`);
+    }
   }
 
   async logout(): Promise<void> {

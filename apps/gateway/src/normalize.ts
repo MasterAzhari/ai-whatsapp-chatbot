@@ -26,7 +26,7 @@ export type GatewayEvent =
       phoneE164?: string;
       profileName?: string;
       text?: string;
-      attachments?: Array<{ kind: 'image' | 'document' | 'audio' | 'video' | 'other'; mimeType?: string; fileName?: string }>;
+      attachments?: Array<{ kind: 'image' | 'document' | 'audio' | 'video' | 'other'; mimeType?: string; fileName?: string; fileLength?: number; data?: string }>;
       timestamp: string;
       fromMe?: boolean;
       isGroup?: boolean;
@@ -48,6 +48,12 @@ function seconds(t: RawMessage['messageTimestamp']): number | null {
   if (typeof t === 'number') return t;
   if (typeof t === 'string') return Number(t) || null;
   return t.toNumber();
+}
+
+function count(n: unknown): number | undefined {
+  if (n == null) return undefined;
+  const v = typeof n === 'object' && 'toNumber' in (n as object) ? (n as { toNumber(): number }).toNumber() : Number(n);
+  return Number.isFinite(v) ? v : undefined;
 }
 
 /** Unwraps ephemeral / view-once containers. */
@@ -77,7 +83,8 @@ export function normalizeMessage(raw: RawMessage, history: boolean, now = new Da
   const attachments: NonNullable<Extract<GatewayEvent, { type: 'message' }>['attachments']> = [];
   const media = (key: string, kind: 'image' | 'document' | 'audio' | 'video') => {
     const v = m[key];
-    if (v) attachments.push({ kind, mimeType: v.mimetype ?? undefined, fileName: v.fileName ?? undefined });
+    const size = count(v?.fileLength);
+    if (v) attachments.push({ kind, mimeType: v.mimetype ?? undefined, fileName: v.fileName ?? undefined, ...(size != null ? { fileLength: size } : {}) });
     return v;
   };
   const image = media('imageMessage', 'image');
@@ -104,6 +111,18 @@ export function normalizeMessage(raw: RawMessage, history: boolean, now = new Da
     isGroup: isGroup(jid),
     isHistoryReplay: history,
   };
+}
+
+/** Media the app can turn into text (voice notes, pictures), with the most bytes it will fetch. */
+export const READABLE_MEDIA: Partial<Record<string, number>> = { audio: 4 * 1024 * 1024, image: 5 * 1024 * 1024 };
+
+/** The first attachment worth downloading for a customer's message, if any. */
+export function readableAttachment(e: GatewayEvent) {
+  if (e.type !== 'message' || e.fromMe || e.isGroup || e.isHistoryReplay) return undefined;
+  return e.attachments?.find((a) => {
+    const max = READABLE_MEDIA[a.kind];
+    return max != null && (a.fileLength ?? 0) <= max;
+  });
 }
 
 /** WebMessageInfo.Status: 0 error, 1 pending, 2 server ack, 3 delivered, 4 read, 5 played. */

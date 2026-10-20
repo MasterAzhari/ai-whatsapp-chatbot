@@ -6,6 +6,8 @@
 export interface ChatTurn {
   role: 'customer' | 'assistant';
   text: string;
+  /** A voice note or picture sent with this turn (base64). */
+  media?: { mimeType: string; data: string };
 }
 
 export interface GenerateReplyInput {

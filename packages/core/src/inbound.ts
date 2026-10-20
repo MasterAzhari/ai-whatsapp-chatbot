@@ -48,7 +48,7 @@ export async function ingestEvent(tx: Tx, tenantId: string, channelId: string, e
      VALUES ($1, $2, $3, 'inbound', 'customer', $4, $5, $6, 'received', $7)
      ON CONFLICT (channel_id, provider_message_id) WHERE provider_message_id IS NOT NULL DO NOTHING
      RETURNING id`,
-    [tenantId, conversationId, channelId, ev.text ?? null, JSON.stringify(ev.attachments ?? []), ev.providerMessageId, ev.timestamp],
+    [tenantId, conversationId, channelId, ev.text ?? null, JSON.stringify(withoutData(ev.attachments)), ev.providerMessageId, ev.timestamp],
   );
   if (!msg.rows[0]) {
     const again = await tx.query<{ id: string }>(
@@ -58,6 +58,12 @@ export async function ingestEvent(tx: Tx, tenantId: string, channelId: string, e
     return { kind: 'duplicate', messageId: again.rows[0]!.id };
   }
   await tx.query('UPDATE contacts SET last_inbound_at = greatest(last_inbound_at, $2) WHERE id = $1', [contactId, ev.timestamp]);
+  const media = ev.attachments?.find((a) => a.data && (a.kind === 'audio' || a.kind === 'image'));
+  if (media) {
+    await tx.query('INSERT INTO message_media (message_id, tenant_id, kind, mime_type, data) VALUES ($1, $2, $3, $4, $5)', [
+      msg.rows[0].id, tenantId, media.kind, media.mimeType?.split(';')[0]?.trim() || (media.kind === 'audio' ? 'audio/ogg' : 'image/jpeg'), Buffer.from(media.data!, 'base64'),
+    ]);
+  }
   return { kind: 'stored', messageId: msg.rows[0].id, conversationId, contactId };
 }
 
@@ -87,11 +93,16 @@ async function recordPhoneReply(tx: Tx, tenantId: string, channelId: string, ev:
      VALUES ($1, $2, $3, 'outbound', 'human', $4, $5, $6, 'sent', $7)
      ON CONFLICT (channel_id, provider_message_id) WHERE provider_message_id IS NOT NULL DO NOTHING
      RETURNING id`,
-    [tenantId, conversationId, channelId, ev.text ?? null, JSON.stringify(ev.attachments ?? []), ev.providerMessageId, ev.timestamp],
+    [tenantId, conversationId, channelId, ev.text ?? null, JSON.stringify(withoutData(ev.attachments)), ev.providerMessageId, ev.timestamp],
   );
   if (!msg.rows[0]) return { kind: 'ignored', reason: 'already stored' };
   await cancelPendingAutomated(tx, conversationId);
   return { kind: 'human_reply', messageId: msg.rows[0].id, conversationId };
+}
+
+/** Media bytes go to message_media (deleted after routing), never into the message row. */
+function withoutData(attachments: InboundMessageEvent['attachments']) {
+  return (attachments ?? []).map(({ data: _d, ...a }) => a);
 }
 
 async function resolveContact(tx: Tx, tenantId: string, channelId: string, ev: InboundMessageEvent): Promise<string> {

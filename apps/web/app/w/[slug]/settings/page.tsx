@@ -222,7 +222,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
             <textarea name="handoverReply" rows={2} maxLength={1000} defaultValue={s.handoverReply ?? ''} />
           </label>
           <label>
-            Balasan bila lead hantar voice note, gambar atau video tanpa teks (kosongkan untuk tidak membalas; chat tetap ditanda perlu staf)
+            Balasan bila lead hantar video, atau voice note dan gambar yang AI tak dapat baca (kosongkan untuk tidak membalas; chat tetap ditanda perlu staf)
             <textarea name="mediaReply" rows={2} maxLength={1000} defaultValue={s.mediaReply ?? ''} />
           </label>
           <label>Keyword berhenti (mesej tepat, satu setiap baris)<textarea name="stopKeywords" rows={3} defaultValue={s.stopKeywords.join('\n')} /></label>

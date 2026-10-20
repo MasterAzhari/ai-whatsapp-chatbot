@@ -138,6 +138,95 @@ export function leadActive(startedAt: Date | null, leadDays: number, now = new D
 
 async function setRoute(tx: Tx, messageId: string, route: Record<string, unknown>) {
   await tx.query('UPDATE messages SET route = $2 WHERE id = $1', [messageId, JSON.stringify({ ...route, at: new Date().toISOString() })]);
+  await tx.query('DELETE FROM message_media WHERE message_id = $1', [messageId]); // only kept until routed
+}
+
+/** Media the bot could not read: ask the customer to type (not too often) and flag the chat for staff. */
+async function mediaFallback(tx: Tx, tenantId: string, conversationId: string, messageId: string, route: { reason: string; reply: string | null }, settings: BotSettings, send: boolean) {
+  // Not a takeover: if the customer then types, keywords and AI carry on.
+  await tx.query("UPDATE conversations SET status = 'pending_human' WHERE id = $1", [conversationId]);
+  if (route.reply && send) {
+    const recent = await tx.query(
+      `SELECT 1 FROM messages WHERE conversation_id = $1 AND direction = 'outbound' AND origin = 'system' AND body = $2
+         AND created_at > now() - ($3 || ' minutes')::interval LIMIT 1`,
+      [conversationId, route.reply, String(MEDIA_REPLY_COOLDOWN_MIN)],
+    );
+    if (!recent.rowCount) {
+      await enqueueReply(tx, { tenantId, conversationId, text: route.reply, origin: 'system', idempotencyKey: `media:${messageId}`, delayMs: replyDelayMs(settings) });
+    }
+  }
+  await setRoute(tx, messageId, { route: 'media', ...route });
+}
+
+const READ_MEDIA = {
+  audio: {
+    system:
+      'You transcribe WhatsApp voice notes for a sales team. Write exactly what the speaker says, in the language spoken (often Malay or Malaysian English), as plain text with no commentary. If there is no clear speech, reply exactly: [tiada suara jelas]',
+    prompt: 'Voice note daripada pelanggan.',
+    toBody: (t: string) => `🎤 ${t}`,
+  },
+  image: {
+    system:
+      'A customer sent this picture to a sales team on WhatsApp. In Malay, describe in at most 3 sentences what it shows, copying any readable text, numbers or amounts that matter. No advice and no commentary.',
+    prompt: 'Gambar daripada pelanggan.',
+    toBody: (t: string) => `🖼️ [Gambar: ${t}]`,
+  },
+} as const;
+
+interface Transcribe {
+  transcribe: true;
+  conversationId: string;
+  kind: 'audio' | 'image';
+  media: { mimeType: string; data: string };
+  settings: BotSettings;
+  reply: string | null;
+}
+
+/**
+ * Turns a lead's voice note or picture into text with the tenant's AI, saves it as the
+ * message text, then routes the message again like a typed one (keywords, then AI).
+ * If the AI cannot read it, falls back to asking the customer to type.
+ */
+async function readMedia(db: Db, tenantId: string, messageId: string, t: Transcribe, deps: RouterDeps): Promise<RouteOutcome> {
+  const s = t.settings;
+  const how = READ_MEDIA[t.kind];
+  const provider = await deps.aiFor(tenantId);
+  const result: GenerateReplyResult = provider
+    ? await provider.generateReply({
+        model: s.aiModel!,
+        systemInstruction: how.system,
+        history: [{ role: 'customer', text: how.prompt, media: t.media }],
+        knowledge: [],
+        maxOutputTokens: 500,
+        timeoutMs: Math.max(s.aiTimeoutMs, 30_000),
+      })
+    : { ok: false, reason: 'error', detail: 'AI provider is not configured (no API key)' };
+  const text = result.ok ? result.text.trim() : '';
+  const usable = result.ok && text && text !== '[tiada suara jelas]';
+
+  const outcome = await withTenant(db, tenantId, async (tx): Promise<RouteOutcome | 'reroute'> => {
+    await tx.query('SELECT 1 FROM conversations WHERE id = $1 FOR UPDATE', [t.conversationId]);
+    await tx.query(
+      `INSERT INTO ai_usage_events (tenant_id, conversation_id, provider, model, input_tokens, output_tokens, latency_ms, outcome)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        tenantId, t.conversationId, provider?.name ?? 'none', result.ok ? result.model : s.aiModel,
+        result.ok ? result.usage.inputTokens : null, result.ok ? result.usage.outputTokens : null, result.ok ? result.latencyMs : null,
+        result.ok ? 'ok' : result.reason,
+      ],
+    );
+    const m = await loadContext(tx, messageId);
+    if (!m || m.route) return 'skipped';
+    if (usable) {
+      await tx.query('UPDATE messages SET body = $2 WHERE id = $1', [messageId, how.toBody(text).slice(0, 4000)]);
+      await tx.query('DELETE FROM message_media WHERE message_id = $1', [messageId]);
+      return 'reroute';
+    }
+    const why = result.ok ? 'tiada suara jelas' : `${result.reason}: ${result.detail}`;
+    await mediaFallback(tx, tenantId, t.conversationId, messageId, { reason: `AI tak dapat baca ${t.kind === 'audio' ? 'voice note' : 'gambar'} (${why}); minta pelanggan taip`, reply: t.reply }, s, !m.superseded);
+    return 'media';
+  });
+  return outcome === 'reroute' ? routeInbound(db, tenantId, messageId, deps) : outcome;
 }
 
 async function applyLabel(tx: Tx, tenantId: string, contactId: string, label: string) {
@@ -159,7 +248,7 @@ async function handOver(tx: Tx, conversationId: string) {
 
 /** Routes one stored inbound message. Safe to run again: a message is routed once. */
 export async function routeInbound(db: Db, tenantId: string, messageId: string, deps: RouterDeps): Promise<RouteOutcome> {
-  const phaseA = await withTenant(db, tenantId, async (tx): Promise<RouteOutcome | Snapshot> => {
+  const phaseA = await withTenant(db, tenantId, async (tx): Promise<RouteOutcome | Snapshot | Transcribe> => {
     const pre = await tx.query<{ conversation_id: string }>('SELECT conversation_id FROM messages WHERE id = $1', [messageId]);
     if (!pre.rows[0]) return 'skipped';
     // Serialise all routing work for one conversation.
@@ -205,19 +294,15 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         await setRoute(tx, messageId, d);
         return 'human';
       case 'media': {
-        // Not a takeover: if the customer then types, keywords and AI carry on.
-        await tx.query("UPDATE conversations SET status = 'pending_human' WHERE id = $1", [m.conversation_id]);
-        if (d.reply && !m.superseded) {
-          const recent = await tx.query(
-            `SELECT 1 FROM messages WHERE conversation_id = $1 AND direction = 'outbound' AND origin = 'system' AND body = $2
-               AND created_at > now() - ($3 || ' minutes')::interval LIMIT 1`,
-            [m.conversation_id, d.reply, String(MEDIA_REPLY_COOLDOWN_MIN)],
-          );
-          if (!recent.rowCount) {
-            await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('media'), delayMs: replyDelayMs(settings) });
-          }
+        const mm = (await tx.query<{ kind: 'audio' | 'image'; mime_type: string; data: string }>(
+          `SELECT kind, mime_type, encode(data, 'base64') AS data FROM message_media WHERE message_id = $1`,
+          [messageId],
+        )).rows[0];
+        // Claude reads pictures but not voice notes; Gemini reads both.
+        if (mm && aiAllowed && (mm.kind === 'image' || settings.aiProvider === 'gemini')) {
+          return { transcribe: true, conversationId: m.conversation_id, kind: mm.kind, media: { mimeType: mm.mime_type, data: mm.data }, settings, reply: d.reply };
         }
-        await setRoute(tx, messageId, d);
+        await mediaFallback(tx, tenantId, m.conversation_id, messageId, d, settings, !m.superseded);
         return 'media';
       }
       case 'keyword':
@@ -260,6 +345,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     }
   });
   if (typeof phaseA === 'string') return phaseA;
+  if ('transcribe' in phaseA) return readMedia(db, tenantId, messageId, phaseA, deps);
 
   // Phase B: call the model outside any transaction so no row lock is held while waiting.
   const s = phaseA.settings;

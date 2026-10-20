@@ -29,7 +29,7 @@ const InboundEvent = z.union([
     profileName: z.string().max(200).optional(),
     text: z.string().max(65536).optional(),
     attachments: z
-      .array(z.object({ kind: z.enum(['image', 'document', 'audio', 'video', 'other']), mimeType: z.string().max(200).optional(), url: z.string().max(2000).optional(), fileName: z.string().max(300).optional() }))
+      .array(z.object({ kind: z.enum(['image', 'document', 'audio', 'video', 'other']), mimeType: z.string().max(200).optional(), url: z.string().max(2000).optional(), fileName: z.string().max(300).optional(), data: z.string().max(7_200_000).optional() }))
       .max(20)
       .optional(),
     timestamp: z.coerce.date(),

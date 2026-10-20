@@ -148,6 +148,11 @@ describe('claude adapter', () => {
   test('toMessages opens with the customer', () => {
     assert.equal(toMessages([{ role: 'assistant', text: 'x' }]).length, 0);
   });
+  test('toMessages sends a picture as an image block, never audio', () => {
+    const [img] = toMessages([{ role: 'customer', text: 'Gambar', media: { mimeType: 'image/jpeg', data: 'AAAA' } }]);
+    assert.deepEqual(img!.content, [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } }, { type: 'text', text: 'Gambar' }]);
+    assert.equal(toMessages([{ role: 'customer', text: 'Voice', media: { mimeType: 'audio/ogg', data: 'AAAA' } }])[0]!.content, 'Voice');
+  });
 });
 
 describe('gemini adapter', () => {
@@ -192,6 +197,10 @@ describe('gemini adapter', () => {
   test('toContents opens with the customer', () => {
     assert.equal(toContents([{ role: 'assistant', text: 'x' }]).length, 0);
   });
+  test('toContents sends voice notes and pictures inline', () => {
+    const c = toContents([{ role: 'customer', text: 'hai' }, { role: 'customer', text: 'Voice', media: { mimeType: 'audio/ogg; codecs=opus', data: 'AAAA' } }]);
+    assert.deepEqual(c, [{ role: 'user', parts: [{ text: 'hai' }, { inlineData: { mimeType: 'audio/ogg; codecs=opus', data: 'AAAA' } }, { text: 'Voice' }] }]);
+  });
 });
 
 // ------------------------------------------------------------------ database
@@ -217,7 +226,7 @@ class ScriptedAI implements AIProvider {
   }
 }
 
-async function inbound(text: string, from = `cust-${randomUUID()}`, attachments?: Array<{ kind: 'image' | 'audio' | 'video' | 'document' | 'other' }>) {
+async function inbound(text: string, from = `cust-${randomUUID()}`, attachments?: Array<{ kind: 'image' | 'audio' | 'video' | 'document' | 'other'; mimeType?: string; data?: string }>) {
   const r = await receiveInbound(db, tA, chA, { type: 'message', providerMessageId: randomUUID(), providerIdentity: from, text: text || undefined, attachments, timestamp: new Date() });
   assert.equal(r.kind, 'stored');
   return r as { kind: 'stored'; messageId: string; conversationId: string };
@@ -308,6 +317,32 @@ describe('routing', () => {
     assert.equal(ai.calls, 0);
     assert.equal(await routeInbound(db, tA, (await inbound('harga', from)).messageId, deps), 'keyword');
     while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
+  });
+
+  test('voice note is turned into text, then answered like a typed message; bytes are not kept', async () => {
+    const voice = [{ kind: 'audio' as const, mimeType: 'audio/ogg; codecs=opus', data: Buffer.from('fake-opus').toString('base64') }];
+    const v = await inbound('', `voice-${randomUUID()}`, voice);
+    ai.result = { ok: true, text: 'Berapa harga aircond 1.5HP?', usage: { inputTokens: 50, outputTokens: 8 }, model: 'gemini-test', latencyMs: 5 };
+    assert.equal(await routeInbound(db, tA, v.messageId, deps), 'keyword'); // "harga" rule answers the transcript
+    assert.equal(ai.calls, 1);
+    assert.equal(ai.lastInput!.history[0]!.media!.mimeType, 'audio/ogg'); // codec suffix dropped for the AI API
+    const c = await getConversation(db, ctxA, v.conversationId);
+    assert.equal(c!.messages[0]!.body, '🎤 Berapa harga aircond 1.5HP?');
+    assert.equal(c!.conversation.status, 'open');
+    const left = await withTenant(db, tA, (tx) => tx.query('SELECT 1 FROM message_media WHERE message_id = $1', [v.messageId]));
+    assert.equal(left.rowCount, 0);
+    // no clear speech, or Claude (cannot hear audio): ask to type instead
+    ai.result = { ok: true, text: '[tiada suara jelas]', usage: { inputTokens: 1, outputTokens: 1 }, model: 'gemini-test', latencyMs: 1 };
+    assert.equal(await routeInbound(db, tA, (await inbound('', `voice-${randomUUID()}`, voice)).messageId, deps), 'media');
+    await settings({ aiProvider: 'anthropic' });
+    try {
+      const calls = ai.calls;
+      assert.equal(await routeInbound(db, tA, (await inbound('', `voice-${randomUUID()}`, voice)).messageId, deps), 'media');
+      assert.equal(ai.calls, calls);
+    } finally {
+      await settings({ aiProvider: 'gemini' });
+      while ((await routeOnce(db, deps)) > 0);
+    }
   });
 
   test('keyword reply is queued once even if routed twice, and sent', async () => {

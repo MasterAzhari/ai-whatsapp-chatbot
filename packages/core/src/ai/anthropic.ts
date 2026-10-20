@@ -64,13 +64,25 @@ export class AnthropicProvider implements AIProvider {
 
 /** Claude expects alternating user/assistant turns opening with the user; merge repeats. */
 export function toMessages(history: GenerateReplyInput['history']) {
-  const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  type Block = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string } };
+  const out: Array<{ role: 'user' | 'assistant'; content: string | Block[] }> = [];
   for (const t of history) {
     const role = t.role === 'customer' ? 'user' : 'assistant';
+    const blocks: Block[] = [
+      ...(t.media && IMAGE_TYPES.has(t.media.mimeType)
+        ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: t.media.mimeType as 'image/jpeg', data: t.media.data } }]
+        : []),
+      { type: 'text', text: t.text },
+    ];
     const last = out.at(-1);
-    if (last && last.role === role) last.content += `\n${t.text}`;
-    else out.push({ role, content: t.text });
+    if (last && last.role === role) {
+      if (typeof last.content === 'string' && blocks.length === 1) last.content += `\n${t.text}`;
+      else last.content = [...(typeof last.content === 'string' ? [{ type: 'text' as const, text: last.content }] : last.content), ...blocks];
+    } else out.push({ role, content: blocks.length === 1 ? t.text : blocks });
   }
   while (out[0]?.role === 'assistant') out.shift();
   return out;
 }
+
+/** Picture types Claude accepts; voice notes are not supported and are never sent here. */
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);

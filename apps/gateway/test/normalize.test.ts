@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid } from '../src/normalize.js';
+import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid, readableAttachment } from '../src/normalize.js';
 
 const key = (o: Record<string, unknown> = {}) => ({ remoteJid: '60123456789@s.whatsapp.net', id: 'ABC', fromMe: false, ...o });
 
@@ -27,6 +27,16 @@ test('wrapped media with caption, groups and history are flagged', () => {
   assert.deepEqual(e.attachments, [{ kind: 'image', mimeType: 'image/jpeg', fileName: undefined }]);
   assert.equal(e.isGroup, true);
   assert.equal(e.isHistoryReplay, true);
+});
+
+test('only customer voice notes and pictures within the size limit are downloaded', () => {
+  const ev = (message: Record<string, any>, fromMe = false) =>
+    normalizeMessage({ key: { remoteJid: '60123456789@s.whatsapp.net', id: 'V1', fromMe }, message, messageTimestamp: 1_700_000_000 }, false)!;
+  assert.equal(readableAttachment(ev({ audioMessage: { mimetype: 'audio/ogg; codecs=opus', fileLength: 30_000 } }))?.kind, 'audio');
+  assert.equal(readableAttachment(ev({ imageMessage: { mimetype: 'image/jpeg', fileLength: { toNumber: () => 200_000 } } }))?.kind, 'image');
+  assert.equal(readableAttachment(ev({ imageMessage: { mimetype: 'image/jpeg', fileLength: 50_000_000 } })), undefined);
+  assert.equal(readableAttachment(ev({ videoMessage: { mimetype: 'video/mp4', fileLength: 1000 } })), undefined);
+  assert.equal(readableAttachment(ev({ audioMessage: { mimetype: 'audio/ogg', fileLength: 1000 } }, true)), undefined);
 });
 
 test('status broadcasts, reactions and empty stubs are dropped', () => {

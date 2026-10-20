@@ -26,6 +26,7 @@ export interface Attachment {
   mimeType?: string;
   url?: string; // private, short-lived
   fileName?: string;
+  data?: string; // base64 bytes of a voice note or picture, for turning into text; never stored with the message
 }
 
 /** Provider-agnostic inbound message after normalisation. */

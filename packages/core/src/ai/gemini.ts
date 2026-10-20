@@ -101,12 +101,17 @@ export class GeminiProvider implements AIProvider {
 
 /** Gemini expects alternating user/model turns; merge consecutive turns of the same role. */
 export function toContents(history: GenerateReplyInput['history']) {
-  const out: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+  type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
+  const out: Array<{ role: 'user' | 'model'; parts: Part[] }> = [];
   for (const t of history) {
     const role = t.role === 'customer' ? 'user' : 'model';
     const last = out.at(-1);
-    if (last && last.role === role) last.parts[0]!.text += `\n${t.text}`;
-    else out.push({ role, parts: [{ text: t.text }] });
+    if (last && last.role === role && !t.media) last.parts[last.parts.length - 1]!.text += `\n${t.text}`;
+    else {
+      const parts: Part[] = t.media ? [{ inlineData: t.media }, { text: t.text }] : [{ text: t.text }];
+      if (last && last.role === role) last.parts.push(...parts);
+      else out.push({ role, parts });
+    }
   }
   while (out[0]?.role === 'model') out.shift(); // must open with the customer
   return out;
