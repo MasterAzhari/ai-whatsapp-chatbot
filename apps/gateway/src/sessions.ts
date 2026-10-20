@@ -10,7 +10,7 @@ export interface SessionDriver {
   status(): { state: 'disconnected' | 'pairing' | 'connected' | 'error'; reason?: string; displayNumber?: string; qr?: string };
   connect(): Promise<void>;
   logout(): Promise<void>;
-  sendText(to: string, text: string, idempotencyKey: string): Promise<{ providerMessageId: string }>;
+  sendText(to: string, text: string, idempotencyKey: string, typingMs?: number): Promise<{ providerMessageId: string }>;
 }
 
 export type InboundSink = (channelId: string, events: unknown[]) => Promise<void>;

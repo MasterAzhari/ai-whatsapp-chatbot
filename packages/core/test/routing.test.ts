@@ -58,6 +58,7 @@ const baseSettings: BotSettings = {
   version: 1, personaName: 'Bot', language: 'ms', systemInstruction: '', aiEnabled: true, aiProvider: 'gemini',
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
   fallbackReply: null, handoverReply: 'Staf akan balas', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
+  replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false,
 };
 
 describe('decide order', () => {
@@ -175,7 +176,7 @@ before(async () => {
     resolveTenantContext(db, (await getSessionUser(db, (await login(db, email, pw))!))!, slug);
   ctxA = await sess('ra@example.test', 'password-a-123', 'ra');
   ctxB = await sess('rb@example.test', 'password-b-123', 'rb');
-  await settings({ aiEnabled: true, aiModel: 'gemini-test', handoverReply: 'Staf kami akan balas.', fallbackReply: null });
+  await settings({ aiEnabled: true, aiModel: 'gemini-test', handoverReply: 'Staf kami akan balas.', fallbackReply: null, replyDelayMinSec: 0, replyDelayMaxSec: 0 });
   await createKeywordRule(db, ctxA, { name: 'Harga', matchType: 'phrase', patterns: ['harga'], replyText: 'Harga bermula RM10.', cooldownSeconds: 3600 });
   await createKeywordRule(db, ctxA, { name: 'Komplen', matchType: 'phrase', patterns: ['komplen'], replyText: 'Kami serahkan kepada staf.', handover: true, setLabel: 'aduan' });
 });
@@ -289,6 +290,21 @@ describe('routing', () => {
     assert.equal(await routeInbound(db, tA, m1.messageId, deps), 'none');
     assert.equal(await routeInbound(db, tA, m2.messageId, deps), 'ai_reply');
     assert.equal(ai.calls, 1);
+  });
+
+  test('reply pacing: automated reply waits, typing time is passed to the adapter', async () => {
+    await settings({ replyDelayMinSec: 5, replyDelayMaxSec: 5, typingIndicator: true });
+    const m = await inbound('Berapa harga?');
+    assert.equal(await routeInbound(db, tA, m.messageId, deps), 'keyword');
+    const due = await withTenant(db, tA, (tx) =>
+      tx.query(`SELECT extract(epoch FROM o.next_attempt_at - now()) AS wait FROM outbox o JOIN messages x ON x.id = o.message_id WHERE x.conversation_id = $1`, [m.conversationId]));
+    assert.ok(due.rows[0].wait > 3 && due.rows[0].wait <= 5, `waits ~5s, got ${due.rows[0].wait}`);
+    await withTenant(db, tA, (tx) => tx.query(`UPDATE outbox SET next_attempt_at = now() WHERE conversation_id = $1`, [m.conversationId]));
+    const seen: Array<number | undefined> = [];
+    await drainOnce(db, async () => ({ ...adapter, sendText: async (i: any) => { seen.push(i.typingMs); return adapter.sendText(i); } }) as any);
+    assert.ok(seen[0]! >= 1000);
+    await settings({ replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false });
+    await assert.rejects(settings({ replyDelayMinSec: 9, replyDelayMaxSec: 2 }));
   });
 
   test('channel AI switch off means no AI', async () => {

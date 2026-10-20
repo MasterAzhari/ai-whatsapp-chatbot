@@ -10,6 +10,7 @@ export interface EnqueueReplyInput {
   authorUserId?: string;
   idempotencyKey: string;
   expiresInMs?: number; // automated replies go stale; human replies default to 24h
+  delayMs?: number; // wait before the first send attempt (reply pacing)
 }
 
 /**
@@ -39,9 +40,9 @@ export async function enqueueReply(tx: Tx, input: EnqueueReplyInput): Promise<{ 
   const messageId = msg.rows[0]!.id;
   const ttl = input.expiresInMs ?? (input.origin === 'human' ? 24 * 3600_000 : 15 * 60_000);
   await tx.query(
-    `INSERT INTO outbox (tenant_id, channel_id, conversation_id, message_id, idempotency_key, expires_at)
-     VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' milliseconds')::interval)`,
-    [input.tenantId, channelId, input.conversationId, messageId, input.idempotencyKey, String(ttl)],
+    `INSERT INTO outbox (tenant_id, channel_id, conversation_id, message_id, idempotency_key, expires_at, next_attempt_at)
+     VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' milliseconds')::interval, now() + ($7 || ' milliseconds')::interval)`,
+    [input.tenantId, channelId, input.conversationId, messageId, input.idempotencyKey, String(ttl), String(Math.max(0, Math.round(input.delayMs ?? 0)))],
   );
   await tx.query('UPDATE conversations SET last_message_at = now() WHERE id = $1', [input.conversationId]);
   return { messageId, duplicate: false };
@@ -124,6 +125,7 @@ export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolve
   const prep = await withTenant(db, job.tenantId, async (tx) => {
     const { rows } = await tx.query(
       `SELECT m.body, m.origin, o.expires_at < now() AS expired, o.state,
+              coalesce((SELECT typing_indicator FROM bot_settings b WHERE b.tenant_id = o.tenant_id), false) AS typing,
               c.human_takeover, ch.automation_enabled, ct.opted_out_at IS NOT NULL AS opted_out,
               pim.provider_identity
          FROM outbox o
@@ -164,7 +166,9 @@ export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolve
 
   let result;
   try {
-    result = await adapter.sendText({ to: prep.provider_identity, text: prep.body ?? '', idempotencyKey: job.idempotencyKey });
+    // Show "typing…" for a time that grows with the length of an automated reply.
+    const typingMs = automated && prep.typing ? Math.min(6000, 1000 + (prep.body ?? '').length * 30) : 0;
+    result = await adapter.sendText({ to: prep.provider_identity, text: prep.body ?? '', idempotencyKey: job.idempotencyKey, typingMs });
   } catch (err) {
     result = { ok: false as const, retryable: false, unknown: true, error: (err as Error).message };
   }

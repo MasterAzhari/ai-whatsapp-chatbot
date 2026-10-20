@@ -20,6 +20,9 @@ export interface BotSettings {
   handoverReply: string | null;
   stopKeywords: string[];
   humanKeywords: string[];
+  replyDelayMinSec: number;
+  replyDelayMaxSec: number;
+  typingIndicator: boolean;
 }
 
 function fromRow(r: Record<string, any>): BotSettings {
@@ -39,6 +42,9 @@ function fromRow(r: Record<string, any>): BotSettings {
     handoverReply: r.handover_reply,
     stopKeywords: r.stop_keywords,
     humanKeywords: r.human_keywords,
+    replyDelayMinSec: r.reply_delay_min_sec,
+    replyDelayMaxSec: r.reply_delay_max_sec,
+    typingIndicator: r.typing_indicator,
   };
 }
 
@@ -74,6 +80,9 @@ export const SettingsUpdate = z.object({
   handoverReply: z.string().trim().max(1000).nullable().optional(),
   stopKeywords: keywordList.optional(),
   humanKeywords: keywordList.optional(),
+  replyDelayMinSec: z.number().int().min(0).max(120).optional(),
+  replyDelayMaxSec: z.number().int().min(0).max(120).optional(),
+  typingIndicator: z.boolean().optional(),
 });
 
 const COLUMNS: Record<string, string> = {
@@ -90,7 +99,16 @@ const COLUMNS: Record<string, string> = {
   handoverReply: 'handover_reply',
   stopKeywords: 'stop_keywords',
   humanKeywords: 'human_keywords',
+  replyDelayMinSec: 'reply_delay_min_sec',
+  replyDelayMaxSec: 'reply_delay_max_sec',
+  typingIndicator: 'typing_indicator',
 };
+
+/** Random wait before an automated reply, from the tenant's pacing settings. */
+export function replyDelayMs(s: Pick<BotSettings, 'replyDelayMinSec' | 'replyDelayMaxSec'>, rand = Math.random): number {
+  const span = Math.max(0, s.replyDelayMaxSec - s.replyDelayMinSec);
+  return Math.round((s.replyDelayMinSec + rand() * span) * 1000);
+}
 
 export class VersionConflictError extends Error {
   readonly status = 409;
@@ -115,6 +133,9 @@ export async function updateBotSettings(
       vals.push(val);
       sets.push(`${col} = $${vals.length}`);
     }
+    const min = v.replyDelayMinSec ?? before.replyDelayMinSec;
+    const max = v.replyDelayMaxSec ?? before.replyDelayMaxSec;
+    if (max < min) throw Object.assign(new z.ZodError([{ code: 'custom', path: ['replyDelayMaxSec'], message: 'must be at least the minimum delay' }]));
     const { rows } = await tx.query(
       `UPDATE bot_settings SET ${[...sets, 'version = version + 1', 'updated_by = $3', 'updated_at = now()'].join(', ')}
         WHERE tenant_id = $1 AND version = $2 RETURNING *`,

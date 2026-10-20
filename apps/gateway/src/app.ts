@@ -67,10 +67,11 @@ export function createGatewayServer(opts: { token: string; sessions: SessionMana
       }
       // send-text
       const { to, text, idempotencyKey } = body;
+      const typingMs = typeof body.typingMs === 'number' ? Math.max(0, Math.min(10_000, body.typingMs)) : 0;
       if (typeof to !== 'string' || typeof text !== 'string' || typeof idempotencyKey !== 'string' || !text || text.length > 4096) {
         return json(res, 400, { error: 'to, text and idempotencyKey are required' });
       }
-      const r = await session.sendText(to, text, idempotencyKey);
+      const r = await session.sendText(to, text, idempotencyKey, typingMs);
       return json(res, 200, { ok: true, providerMessageId: r.providerMessageId, status: 'sent' });
     } catch (err) {
       const e = err as Error & { status?: number };

@@ -110,11 +110,18 @@ export class BaileysSessionDriver implements SessionDriver {
     this.state = { state: 'disconnected' };
   }
 
-  async sendText(to: string, text: string, idempotencyKey: string): Promise<{ providerMessageId: string }> {
+  async sendText(to: string, text: string, idempotencyKey: string, typingMs = 0): Promise<{ providerMessageId: string }> {
     const done = this.sentByKey.get(idempotencyKey);
     if (done) return { providerMessageId: done };
     if (!this.sock || this.state.state !== 'connected') throw Object.assign(new Error('session not connected'), { status: 409 });
     if (!/@(s\.whatsapp\.net|lid)$/.test(to)) throw Object.assign(new Error('unsupported recipient'), { status: 400 });
+    if (typingMs > 0) {
+      // Best effort: a failed presence update must not stop the reply.
+      await this.sock.sendPresenceUpdate('composing', to).catch(() => {});
+      await new Promise((r) => setTimeout(r, typingMs));
+      await this.sock?.sendPresenceUpdate('paused', to).catch(() => {});
+      if (!this.sock || this.state.state !== 'connected') throw Object.assign(new Error('session not connected'), { status: 409 });
+    }
     const sent = await this.sock.sendMessage(to, { text });
     const id = sent?.key.id;
     if (!id) throw new Error('WhatsApp did not return a message id');

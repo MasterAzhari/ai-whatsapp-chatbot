@@ -40,7 +40,9 @@ Test run 2026-10-20 (Phase 1): core 21/21, gateway 3/3.
 | Connections page: add QR channel, show QR, status, unlink | Done | Playwright against the mock gateway |
 | Flow state, knowledge snippets | Not started | |
 
-Test run 2026-10-20 (Phase 2 + QR): core 50/50, gateway 9/9.
+Test run 2026-10-20 (Phase 2 + QR + pacing): core 51/51, gateway 10/10.
+
+Reply pacing (migration 003): automated replies wait a random 3–8 s by default and show "typing…" on QR channels; editable in Tetapan bot.
 
 ## Next
 

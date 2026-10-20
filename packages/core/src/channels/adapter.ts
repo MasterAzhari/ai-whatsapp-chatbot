@@ -63,6 +63,7 @@ export interface SendTextInput {
   to: string; // provider identity
   text: string;
   idempotencyKey: string;
+  typingMs?: number; // show a typing indicator this long before sending, where the provider supports it
 }
 
 export interface ChannelAdapter {

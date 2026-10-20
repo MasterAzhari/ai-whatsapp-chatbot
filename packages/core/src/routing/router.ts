@@ -3,7 +3,7 @@ import { withTenant } from '../db.js';
 import type { AIProvider, ChatTurn, GenerateReplyResult } from '../ai/provider.js';
 import { cancelPendingAutomated, enqueueReply } from '../outbox.js';
 import { loadRules } from '../repos/keywords.js';
-import { loadSettings, type BotSettings } from '../repos/settings.js';
+import { loadSettings, replyDelayMs, type BotSettings } from '../repos/settings.js';
 import { matchPattern, pickRule, type KeywordRule } from './match.js';
 
 /**
@@ -164,7 +164,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         return 'stop';
       case 'human':
         await handOver(tx, m.conversation_id);
-        if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover') });
+        if (d.reply) await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: 'system', idempotencyKey: key('handover'), delayMs: replyDelayMs(settings) });
         await setRoute(tx, messageId, d);
         return 'human';
       case 'keyword':
@@ -172,7 +172,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         // (origin system), which takeover does not block.
         if (d.handover) await handOver(tx, m.conversation_id);
         if (d.reply) {
-          await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw') });
+          await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: replyDelayMs(settings) });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
         await tx.query(
@@ -245,13 +245,13 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
     }
     const key = (suffix: string) => `${suffix}:${messageId}`;
     if (result.ok) {
-      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: result.text, origin: 'ai', idempotencyKey: key('ai') });
+      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: result.text, origin: 'ai', idempotencyKey: key('ai'), delayMs: replyDelayMs(s) });
       await setRoute(tx, messageId, { route: 'ai', reason: 'tiada keyword padan', model: result.model, latencyMs: result.latencyMs, usage: result.usage });
       return 'ai_reply';
     }
     // AI failed (timeout, quota, invalid model...): fixed fallback, or hand over to a human.
     if (s.fallbackReply) {
-      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: s.fallbackReply, origin: 'system', idempotencyKey: key('fallback') });
+      await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: s.fallbackReply, origin: 'system', idempotencyKey: key('fallback'), delayMs: replyDelayMs(s) });
       await setRoute(tx, messageId, { route: 'ai', reason: `AI gagal (${result.reason}: ${result.detail}); balasan sandaran dihantar` });
       return 'ai_fallback';
     }

@@ -59,6 +59,9 @@ export default async function Settings({ params, searchParams }: { params: Promi
           handoverReply: opt('handoverReply'),
           stopKeywords: lines(f.get('stopKeywords')),
           humanKeywords: lines(f.get('humanKeywords')),
+          replyDelayMinSec: Number(f.get('replyDelayMinSec')),
+          replyDelayMaxSec: Number(f.get('replyDelayMaxSec')),
+          typingIndicator: f.get('typingIndicator') === 'on',
         }),
       'settings',
     );
@@ -172,6 +175,12 @@ export default async function Settings({ params, searchParams }: { params: Promi
             <label>Bilangan mesej sejarah<input name="historyTurns" type="number" min={1} max={50} defaultValue={s.historyTurns} /></label>
             <label>Had masa AI (saat)<input name="aiTimeoutSec" type="number" min={1} max={120} defaultValue={s.aiTimeoutMs / 1000} /></label>
           </div>
+          <div className="row">
+            <label>Lengah balasan minimum (saat)<input name="replyDelayMinSec" type="number" min={0} max={120} defaultValue={s.replyDelayMinSec} /></label>
+            <label>Lengah balasan maksimum (saat)<input name="replyDelayMaxSec" type="number" min={0} max={120} defaultValue={s.replyDelayMaxSec} /></label>
+          </div>
+          <label className="check"><input type="checkbox" name="typingIndicator" defaultChecked={s.typingIndicator} /> Tunjuk &quot;sedang menaip…&quot; sebelum balas (WhatsApp QR)</label>
+          <div className="small muted">Bot menunggu masa rawak antara minimum dan maksimum, kemudian menaip mengikut panjang jawapan. Balasan manusia tidak dilengahkan.</div>
           <label>
             Balasan bila AI gagal (kosong = serah terus kepada manusia)
             <textarea name="fallbackReply" rows={2} maxLength={1000} defaultValue={s.fallbackReply ?? ''} />
