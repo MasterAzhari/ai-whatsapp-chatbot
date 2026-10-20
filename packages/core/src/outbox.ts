@@ -49,6 +49,35 @@ export async function enqueueReply(tx: Tx, input: EnqueueReplyInput): Promise<{ 
   return { messageId, duplicate: false };
 }
 
+/** A line of three or more dashes splits a reply into separate WhatsApp bubbles. */
+const BUBBLE_BREAK = /^[ \t]*-{3,}[ \t]*$/m;
+export const MAX_BUBBLES = 4;
+const BUBBLE_GAP_MS = 1500;
+
+/** Splits a reply into at most MAX_BUBBLES bubbles; anything beyond goes in the last one. */
+export function splitBubbles(text: string): string[] {
+  const parts = text.split(BUBBLE_BREAK).map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= MAX_BUBBLES) return parts.length ? parts : [text.trim()];
+  return [...parts.slice(0, MAX_BUBBLES - 1), parts.slice(MAX_BUBBLES - 1).join('\n\n')];
+}
+
+/**
+ * Queues a reply as one or more bubbles, in order and a moment apart. The picture,
+ * if any, goes with the first bubble as its caption.
+ */
+export async function enqueueBubbles(tx: Tx, input: EnqueueReplyInput): Promise<void> {
+  const bubbles = splitBubbles(input.text);
+  for (const [i, text] of bubbles.entries()) {
+    await enqueueReply(tx, {
+      ...input,
+      text,
+      imageAssetId: i === 0 ? input.imageAssetId : null,
+      idempotencyKey: i === 0 ? input.idempotencyKey : `${input.idempotencyKey}:${i + 1}`,
+      delayMs: (input.delayMs ?? 0) + i * BUBBLE_GAP_MS,
+    });
+  }
+}
+
 /** Cancels queued automated replies, e.g. when a human takes over. Returns how many. */
 export async function cancelPendingAutomated(tx: Tx, conversationId: string): Promise<number> {
   const res = await tx.query(

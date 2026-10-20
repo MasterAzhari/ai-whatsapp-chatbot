@@ -3,6 +3,7 @@ import type { Db, Tx } from '../db.js';
 import { inTenant, requireRole, type TenantContext } from '../auth.js';
 import type { KeywordRule } from '../routing/match.js';
 import { audit } from './audit.js';
+import { splitBubbles } from '../outbox.js';
 import { VersionConflictError } from './settings.js';
 
 export interface KeywordRuleView extends KeywordRule {
@@ -58,7 +59,7 @@ export const RuleInput = z
     imageAssetId: z.string().uuid().nullable().default(null),
   })
   .refine((r) => r.replyText || r.setLabel || r.handover || r.imageAssetId, 'a rule needs a reply, a picture, a label or handover')
-  .refine((r) => !r.imageAssetId || (r.replyText ?? '').length <= MAX_CAPTION, `balasan bersama gambar maksimum ${MAX_CAPTION} aksara`);
+  .refine((r) => !r.imageAssetId || (splitBubbles(r.replyText ?? '')[0] ?? '').length <= MAX_CAPTION, `balasan bersama gambar maksimum ${MAX_CAPTION} aksara`);
 
 async function checkImage(tx: Tx, id: string | null) {
   if (id && !(await tx.query('SELECT 1 FROM media_assets WHERE id = $1', [id])).rowCount) throw new Error('gambar tidak dijumpai');

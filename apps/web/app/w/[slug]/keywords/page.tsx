@@ -149,7 +149,8 @@ function RuleForm({ action, rule, channels, slug }: { action: (f: FormData) => P
         </select>
       </label>
       <label>Keyword (satu setiap baris)<textarea name="patterns" rows={3} required defaultValue={rule?.patterns.join('\n')} /></label>
-      <label>Balasan tetap<textarea name="replyText" rows={3} maxLength={4096} defaultValue={rule?.replyText ?? ''} /></label>
+      <label>Balasan tetap<textarea name="replyText" rows={5} maxLength={4096} defaultValue={rule?.replyText ?? ''} /></label>
+      <div className="small muted">Untuk hantar sebagai beberapa bubble (maksimum 4), letak satu baris <code>---</code> antara setiap bubble. Gambar dihantar bersama bubble pertama.</div>
       <label>
         Gambar bersama balasan (pilihan: poster atau gambar produk, JPG/PNG/WebP sehingga 5 MB; balasan jadi kapsyen, maksimum 1000 aksara)
         {rule?.imageAssetId && <img src={`/w/${slug}/media/${rule.imageAssetId}`} alt="Gambar semasa" style={{ display: 'block', maxWidth: 160, borderRadius: 8, margin: '6px 0' }} />}

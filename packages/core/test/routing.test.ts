@@ -5,7 +5,7 @@ import type { Db } from '../src/db.js';
 import { withSystem, withTenant } from '../src/db.js';
 import { getSessionUser, login, resolveTenantContext, type SessionUser as SessionUserT, type TenantContext } from '../src/auth.js';
 import { addMembership, createChannel, createTenant, createUser } from '../src/repos/platform.js';
-import { drainOnce } from '../src/outbox.js';
+import { drainOnce, splitBubbles } from '../src/outbox.js';
 import { getConversation, resumeBot, takeOver } from '../src/repos/conversations.js';
 import { MockChannelAdapter } from '../src/channels/mock.js';
 import { MockAIProvider, type AIProvider, type GenerateReplyInput, type GenerateReplyResult } from '../src/ai/provider.js';
@@ -850,5 +850,38 @@ describe('auto follow-up', () => {
     ai.result = { ok: false, reason: 'timeout', detail: 'slow' };
     assert.equal(await run(), 1);
     assert.deepEqual(await followups(conv2), [DEFAULT_FOLLOWUPS[0]]);
+  });
+});
+
+describe('replies in several bubbles', () => {
+  let tG: string, chG: string;
+  before(async () => {
+    tG = await createTenant(db, { slug: 'bub', name: 'G' });
+    chG = await createChannel(db, tG, { name: 'G', provider: 'mock', status: 'connected', automationEnabled: true });
+    await withTenant(db, tG, (tx) => tx.query('INSERT INTO bot_settings (tenant_id, reply_delay_min_sec, reply_delay_max_sec) VALUES ($1, 0, 0)', [tG]));
+  });
+
+  test('a --- line splits a reply into bubbles (at most 4), sent in order', async () => {
+    assert.deepEqual(splitBubbles('Satu'), ['Satu']);
+    assert.deepEqual(splitBubbles('Satu\n---\nDua\n\n  ---  \nTiga'), ['Satu', 'Dua', 'Tiga']);
+    assert.deepEqual(splitBubbles('a\n---\nb\n---\nc\n---\nd\n---\ne'), ['a', 'b', 'c', 'd\n\ne']);
+    assert.deepEqual(splitBubbles('harga - RM105 --- lepas tu'), ['harga - RM105 --- lepas tu']); // only a line of its own splits
+
+    await withTenant(db, tG, (tx) => tx.query(
+      `INSERT INTO keyword_rules (tenant_id, name, match_type, patterns, reply_text) VALUES ($1, 'Bubble', 'phrase', '{nak bubble}', $2)`,
+      [tG, 'Harga dulu\n---\nKelebihan pula\n---\nTaip DAFTAR']));
+    {
+      const r = await receiveInbound(db, tG, chG, { type: 'message', providerMessageId: randomUUID(), providerIdentity: `bub-${randomUUID()}`, text: 'saya nak bubble', timestamp: new Date() });
+      const m = r as { messageId: string; conversationId: string };
+      assert.equal(await routeInbound(db, tG, m.messageId, { aiFor: async () => null }), 'keyword');
+      const before = adapter.sent.length;
+      while (Object.values(await drainOnce(db, resolveAdapter)).some((n) => n > 0));
+      // later bubbles wait a moment; send them now
+      await withTenant(db, tG, (tx) => tx.query("UPDATE outbox SET next_attempt_at = now() WHERE conversation_id = $1 AND state = 'pending'", [m.conversationId]));
+      while (Object.values(await drainOnce(db, resolveAdapter)).some((n) => n > 0));
+      assert.deepEqual(adapter.sent.slice(before).map((s) => s.text), ['Harga dulu', 'Kelebihan pula', 'Taip DAFTAR']);
+      const rows = await withTenant(db, tG, (tx) => tx.query("SELECT body FROM messages WHERE conversation_id = $1 AND direction = 'outbound' ORDER BY created_at", [m.conversationId]));
+      assert.deepEqual(rows.rows.map((o) => o.body), ['Harga dulu', 'Kelebihan pula', 'Taip DAFTAR']);
+    }
   });
 });

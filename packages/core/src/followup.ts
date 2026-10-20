@@ -1,7 +1,7 @@
 import type { Db, Tx } from './db.js';
 import { withSystem, withTenant } from './db.js';
 import type { ChatTurn, GenerateReplyResult } from './ai/provider.js';
-import { enqueueReply } from './outbox.js';
+import { enqueueReply, splitBubbles } from './outbox.js';
 import { loadSettings, replyDelayMs, type BotSettings } from './repos/settings.js';
 import { AI_GUARDRAILS, leadActive, type RouterDeps } from './routing/router.js';
 
@@ -152,7 +152,8 @@ async function sendOne(db: Db, due: Due, deps: RouterDeps): Promise<'sent' | 'sk
     // The customer may have written, or staff taken over, while the AI was thinking.
     const again = (await findDue(tx, due.conversationId))[0];
     if (!again || again.lastMessageId !== due.lastMessageId) return 'skipped';
-    const text = result?.ok ? result.text.trim() : '';
+    // One bubble: each follow-up message counts towards the limit of three.
+    const text = result?.ok ? splitBubbles(result.text).join('\n\n') : '';
     if (text.replace(/[^A-Z]/g, '') === SKIP) {
       await tx.query('UPDATE conversations SET followup_stopped_at = now() WHERE id = $1', [due.conversationId]);
       return 'stopped';
