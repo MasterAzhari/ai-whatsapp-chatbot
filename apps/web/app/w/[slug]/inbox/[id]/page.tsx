@@ -1,19 +1,34 @@
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { addInternalNote, getConversation, resumeBot, sendManualReply, setStatus, takeOver } from '@chatbot/core';
+import { addInternalNote, getConversation, listConversations, resumeBot, sendManualReply, setStatus, takeOver } from '@chatbot/core';
 import { db, requireTenant } from '@/lib/server';
+import { Avatar, BotPill, ChatList, displayName } from '../chat-list';
+import { AutoRefresh } from '../refresh';
 
 export const dynamic = 'force-dynamic';
 
 const ROUTE = { none: 'tiada balasan', stop: 'berhenti', human: 'serah kepada manusia', keyword: 'keyword', media: 'voice/gambar, minta taip', ai: 'AI' } as const;
-const ORIGIN = { customer: 'Pelanggan', keyword: 'Keyword', flow: 'Flow', ai: 'AI', human: 'Manusia', system: 'Sistem' } as const;
+const ORIGIN = { customer: '', keyword: '🔑 Keyword', flow: 'Flow', ai: '🤖 AI', human: '🙋 Manusia', system: '⚙️ Sistem' } as const;
+const TICK: Record<string, { mark: string; title: string; cls?: string }> = {
+  queued: { mark: '🕓', title: 'Dalam giliran' },
+  accepted: { mark: '✓', title: 'Diterima' },
+  sent: { mark: '✓', title: 'Dihantar' },
+  delivered: { mark: '✓✓', title: 'Sampai' },
+  read: { mark: '✓✓', title: 'Dibaca', cls: 'read' },
+  failed: { mark: '⚠️', title: 'Gagal', cls: 'failed' },
+  unknown: { mark: '?', title: 'Status tidak pasti', cls: 'failed' },
+};
+const TZ = 'Asia/Kuala_Lumpur';
+const clock = (iso: string) => new Date(iso).toLocaleTimeString('ms-MY', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+const day = (iso: string) => new Date(iso).toLocaleDateString('ms-MY', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 export default async function ConversationPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const ctx = await requireTenant(slug);
   const data = await getConversation(db(), ctx, id);
   if (!data) notFound();
+  const rows = await listConversations(db(), ctx, {});
   const { conversation: c, messages } = data;
   const path = `/w/${slug}/inbox/${id}`;
 
@@ -47,51 +62,78 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
     revalidatePath(path);
   }
 
-  return (
-    <>
-      <div className="toolbar">
-        <a href={`/w/${slug}/inbox`}>← Inbox</a>
-        <h1 style={{ margin: 0 }}>{c.contactName ?? c.contactPhone ?? 'Tanpa nama'}</h1>
-        <span className="badge">{c.status}</span>
-        {c.botState === 'on' && <span className="badge ok">Bot hidup untuk nombor ini</span>}
-        {c.botState === 'off' && <span className="badge warn">Bot mati (anda layan)</span>}
-        {c.botState === 'not_lead' && <span className="badge">Bot senyap: bukan lead</span>}
-        <span style={{ marginLeft: 'auto' }} />
-        <form action={toggleTakeover} className="inline">
-          <button type="submit" className={c.botState === 'on' ? 'danger' : 'primary'}>{c.botState === 'on' ? 'Matikan bot untuk nombor ini' : 'Hidupkan bot untuk nombor ini'}</button>
-        </form>
-        {c.status !== 'resolved' && (
-          <form action={resolve} className="inline"><button type="submit">Tanda selesai</button></form>
-        )}
-      </div>
-      <div className="small muted" style={{ marginBottom: 8 }}>{c.channelName}{c.contactPhone ? ` · ${c.contactPhone}` : ''}</div>
-      <div className="panel">
-        <div className="thread">
-          {messages.map((m) => (
-            <div key={m.id} className={`bubble ${m.direction}`}>
-              {m.imageAssetId && <img src={`/w/${slug}/media/${m.imageAssetId}`} alt="Gambar dihantar" style={{ display: 'block', maxWidth: 220, borderRadius: 8, marginBottom: 6 }} />}
-              {m.attachments.length > 0 && <div className="small"><b>📎 {m.attachments.join(', ')}</b> <span className="muted">(buka di WhatsApp telefon)</span></div>}
-              {m.body}
-              <div className="meta">
-                {ORIGIN[m.origin]} · {new Date(m.createdAt).toLocaleString('ms-MY', { timeZone: 'Asia/Kuala_Lumpur' })}
-                {m.direction === 'outbound' && <> · {m.status}{m.statusDetail ? ` (${m.statusDetail})` : ''}</>}
-              </div>
-              {m.direction === 'inbound' && (
-                <div className="route">{m.route ? `Bot: ${ROUTE[m.route.route as keyof typeof ROUTE] ?? m.route.route}, ${m.route.reason}` : 'Bot: belum diproses'}</div>
-              )}
-            </div>
-          ))}
+  // The scroll box is column-reverse, so the view opens pinned to the latest message.
+  const items: Array<{ key: string; el: React.ReactNode }> = [];
+  let lastDay = '';
+  for (const m of messages) {
+    const d = day(m.createdAt);
+    if (d !== lastDay) {
+      items.push({ key: `d-${m.id}`, el: <div className="wa-day"><span>{d}</span></div> });
+      lastDay = d;
+    }
+    if (m.direction === 'note') {
+      items.push({ key: m.id, el: <div className="wa-note">📝 {m.body} <span className="wa-meta">{clock(m.createdAt)}</span></div> });
+      continue;
+    }
+    const tick = m.direction === 'outbound' ? TICK[m.status] : undefined;
+    items.push({
+      key: m.id,
+      el: (
+        <div className={`wa-bubble ${m.direction}`}>
+          {m.direction === 'outbound' && ORIGIN[m.origin] && <div className="wa-origin">{ORIGIN[m.origin]}</div>}
+          {m.imageAssetId && <img src={`/w/${slug}/media/${m.imageAssetId}`} alt="Gambar dihantar" className="wa-img" />}
+          {m.attachments.length > 0 && <div className="wa-attach">📎 {m.attachments.join(', ')} <span className="muted">(buka di telefon)</span></div>}
+          {m.body && <span className="wa-text">{m.body}</span>}
+          <span className="wa-meta">
+            {clock(m.createdAt)}
+            {tick && <span className={`wa-tick ${tick.cls ?? ''}`} title={m.statusDetail ? `${tick.title}: ${m.statusDetail}` : tick.title}>{tick.mark}</span>}
+          </span>
+          {m.direction === 'inbound' && (
+            <div className="wa-route">{m.route ? `Bot: ${ROUTE[m.route.route as keyof typeof ROUTE] ?? m.route.route}, ${m.route.reason}` : 'Bot: belum diproses'}</div>
+          )}
+          {m.direction === 'outbound' && m.status === 'failed' && m.statusDetail && <div className="wa-route failed">{m.statusDetail}</div>}
         </div>
-        <form action={reply} className="composer">
+      ),
+    });
+  }
+
+  return (
+    <div className="wa has-chat">
+      <AutoRefresh />
+      <ChatList slug={slug} rows={rows} activeId={id} />
+      <section className="wa-chat">
+        <header className="wa-head">
+          <a href={`/w/${slug}/inbox`} className="wa-back" aria-label="Kembali ke senarai chat">←</a>
+          <Avatar name={displayName(c)} size={40} />
+          <div className="wa-head-name">
+            <b>{displayName(c)}</b>
+            <span className="small">{[c.contactName ? c.contactPhone : null, c.channelName].filter(Boolean).join(' · ')}</span>
+          </div>
+          <div className="wa-actions">
+            <BotPill state={c.botState} />
+            <form action={toggleTakeover} className="inline">
+              <button type="submit" className={c.botState === 'on' ? 'danger' : 'primary'} title="Bot untuk nombor ini sahaja">
+                <span className="long">{c.botState === 'on' ? 'Matikan bot' : 'Hidupkan bot'}</span>
+                <span className="short">{c.botState === 'on' ? '⏸ Bot' : '▶ Bot'}</span>
+              </button>
+            </form>
+            {c.status !== 'resolved' ? (
+              <form action={resolve} className="inline"><button type="submit" title="Tanda selesai">✓<span className="long"> Selesai</span></button></form>
+            ) : (
+              <span className="pill">Selesai</span>
+            )}
+          </div>
+        </header>
+        <div className="wa-scroll">
+          <div className="wa-msgs">{items.map((i) => <div key={i.key} className="wa-row">{i.el}</div>)}</div>
+        </div>
+        <form action={reply} className="wa-composer">
           <input type="hidden" name="rid" value={randomUUID()} />
-          <textarea name="text" rows={2} placeholder="Balas sebagai manusia (bot akan dipause)" required maxLength={4096} />
-          <button className="primary" type="submit">Hantar</button>
+          <textarea name="text" rows={1} placeholder={c.botState === 'on' ? 'Taip mesej (bot akan berhenti untuk nombor ini)' : 'Taip mesej'} required maxLength={4096} />
+          <button type="submit" formAction={note} className="wa-note-btn" title="Simpan sebagai nota dalaman (tidak dihantar kepada pelanggan)">📝</button>
+          <button type="submit" className="wa-send" aria-label="Hantar">➤</button>
         </form>
-        <form action={note} className="composer">
-          <input type="text" name="text" placeholder="Nota dalaman (tidak dihantar kepada pelanggan)" required maxLength={4096} />
-          <button type="submit">Simpan nota</button>
-        </form>
-      </div>
-    </>
+      </section>
+    </div>
   );
 }
