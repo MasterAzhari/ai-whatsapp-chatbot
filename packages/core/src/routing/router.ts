@@ -188,12 +188,14 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           await setRoute(tx, messageId, { route: 'none', reason: 'mesej lebih baru tiba; AI jawab mesej itu' });
           return 'none';
         }
+        // Compare timestamps inside SQL: a JS Date drops microseconds, which would
+        // exclude the very message being answered.
         const hist = await tx.query(
-          `SELECT direction, body FROM messages
-            WHERE conversation_id = $1 AND direction IN ('inbound', 'outbound') AND body IS NOT NULL
-              AND status NOT IN ('failed') AND created_at <= $2
-            ORDER BY created_at DESC, id DESC LIMIT $3`,
-          [m.conversation_id, m.created_at, settings.historyTurns],
+          `SELECT h.direction, h.body FROM messages h, messages cur
+            WHERE cur.id = $2 AND h.conversation_id = $1 AND h.direction IN ('inbound', 'outbound') AND h.body IS NOT NULL
+              AND h.status NOT IN ('failed') AND (h.created_at, h.id) <= (cur.created_at, cur.id)
+            ORDER BY h.created_at DESC, h.id DESC LIMIT $3`,
+          [m.conversation_id, messageId, settings.historyTurns],
         );
         const history = hist.rows.reverse().map((r) => ({ role: r.direction === 'inbound' ? 'customer' : 'assistant', text: r.body }) as ChatTurn);
         return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history };

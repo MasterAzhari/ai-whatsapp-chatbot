@@ -133,10 +133,12 @@ const resolveAdapter = async () => adapter;
 class ScriptedAI implements AIProvider {
   readonly name = 'scripted';
   calls = 0;
+  lastInput?: GenerateReplyInput;
   onCall: () => Promise<void> = async () => {};
   constructor(public result: GenerateReplyResult) {}
-  async generateReply(): Promise<GenerateReplyResult> {
+  async generateReply(input: GenerateReplyInput): Promise<GenerateReplyResult> {
     this.calls++;
+    this.lastInput = input;
     await this.onCall();
     return this.result;
   }
@@ -245,6 +247,16 @@ describe('routing', () => {
     const live = usage.find((u) => u.source === 'live')!;
     assert.ok(live.inputTokens >= 10);
     assert.equal(live.estimatedCost, null); // no rate on file
+  });
+
+  test('AI receives the message being answered, after earlier turns', async () => {
+    const from = `cust-${randomUUID()}`;
+    const first = await inbound('hai', from);
+    await routeInbound(db, tA, first.messageId, deps);
+    assert.deepEqual(ai.lastInput?.history, [{ role: 'customer', text: 'hai' }]);
+    const second = await inbound('ada stok?', from);
+    await routeInbound(db, tA, second.messageId, deps);
+    assert.deepEqual(ai.lastInput?.history.map((t) => t.text), ['hai', 'Jawapan AI', 'ada stok?']);
   });
 
   test('AI answer discarded if a human takes over while it generates', async () => {
