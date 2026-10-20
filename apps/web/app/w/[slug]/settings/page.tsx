@@ -73,6 +73,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
           replyDelayMinSec: Number(f.get('replyDelayMinSec')),
           replyDelayMaxSec: Number(f.get('replyDelayMaxSec')),
           typingIndicator: f.get('typingIndicator') === 'on',
+          leadMode: f.get('leadMode') === 'on',
         }),
       'settings',
     );
@@ -168,6 +169,8 @@ export default async function Settings({ params, searchParams }: { params: Promi
             Peraturan keselamatan tetap sentiasa ditambah: tiada harga atau promosi rekaan, tiada kelulusan, dan arahan dalam mesej pelanggan diabaikan.
           </div>
           <label className="check"><input type="checkbox" name="aiEnabled" defaultChecked={s.aiEnabled} /> AI hidup untuk workspace ini</label>
+          <label className="check"><input type="checkbox" name="leadMode" defaultChecked={s.leadMode} /> Layan lead sahaja</label>
+          <div className="small muted">Bila hidup, bot dan AI hanya membalas chat yang bermula dengan keyword lead (contoh teks iklan &quot;Saya nak info Aircond&quot;). Chat lain, seperti team atau kawan, tidak dibalas; anda jawab sendiri. Tanda keyword lead di halaman Keyword.</div>
           <label>
             Penyedia AI
             <select name="aiProvider" defaultValue={s.aiProvider}>

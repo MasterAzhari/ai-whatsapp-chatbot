@@ -18,7 +18,7 @@ export interface PlaygroundResult {
 export async function simulate(
   db: Db,
   ctx: TenantContext,
-  input: { text: string; channelId: string; callAi: boolean },
+  input: { text: string; channelId: string; callAi: boolean; isLead?: boolean },
   aiFor: (tenantId: string) => Promise<AIProvider | null>,
 ): Promise<PlaygroundResult> {
   requireRole(ctx, 'admin');
@@ -32,6 +32,7 @@ export async function simulate(
     automationEnabled: true,
     humanTakeover: false,
     optedOut: false,
+    isLead: input.isLead ?? true,
     aiAllowed: !!settings.aiModel,
     settings,
     rules,

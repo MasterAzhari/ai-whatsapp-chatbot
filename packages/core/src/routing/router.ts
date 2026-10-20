@@ -16,7 +16,7 @@ export type Route =
   | { route: 'none'; reason: string }
   | { route: 'stop'; reason: string }
   | { route: 'human'; reason: string; reply: string | null }
-  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; setLabel: string | null; handover: boolean }
+  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; setLabel: string | null; handover: boolean; startsLead: boolean }
   | { route: 'ai'; reason: string };
 
 export interface DecisionInput {
@@ -25,6 +25,7 @@ export interface DecisionInput {
   automationEnabled: boolean;
   humanTakeover: boolean;
   optedOut: boolean;
+  isLead: boolean; // the chat already came in through a lead keyword
   aiAllowed: boolean; // tenant + channel + conversation switches, and a model chosen
   settings: BotSettings;
   rules: KeywordRule[];
@@ -38,26 +39,36 @@ export function decide(d: DecisionInput): Route {
   if (d.optedOut) return { route: 'none', reason: 'pelanggan telah berhenti (opt-out)' };
   if (!d.text.trim()) return { route: 'none', reason: 'tiada teks (lampiran sahaja)' };
 
+  // Lead mode: until a lead keyword arrives, the bot stays silent and staff answer.
+  if (d.settings.leadMode && !d.isLead) {
+    const lead = pickRule(d.text, d.rules.filter((r) => r.startsLead), { channelId: d.channelId });
+    if (!lead) return { route: 'none', reason: 'bukan lead (tiada keyword lead); staf jawab sendiri' };
+    return keywordRoute(lead.rule, lead.pattern);
+  }
+
   const stop = matchPattern(d.text, 'exact', d.settings.stopKeywords);
   if (stop) return { route: 'stop', reason: `keyword berhenti "${stop}"` };
   const human = matchPattern(d.text, 'phrase', d.settings.humanKeywords);
   if (human) return { route: 'human', reason: `minta manusia ("${human}")`, reply: d.settings.handoverReply };
 
   const hit = pickRule(d.text, d.rules, { channelId: d.channelId, lastHitAt: d.lastHitAt });
-  if (hit) {
-    return {
-      route: 'keyword',
-      reason: `peraturan "${hit.rule.name}" padan "${hit.pattern}" (${hit.rule.matchType === 'exact' ? 'tepat' : 'frasa'})`,
-      ruleId: hit.rule.id,
-      ruleName: hit.rule.name,
-      pattern: hit.pattern,
-      reply: hit.rule.replyText,
-      setLabel: hit.rule.setLabel,
-      handover: hit.rule.handover,
-    };
-  }
+  if (hit) return keywordRoute(hit.rule, hit.pattern);
   if (!d.aiAllowed) return { route: 'none', reason: 'tiada keyword padan dan AI dimatikan' };
   return { route: 'ai', reason: 'tiada keyword padan' };
+}
+
+function keywordRoute(rule: KeywordRule, pattern: string): Route {
+  return {
+    route: 'keyword',
+    reason: `peraturan "${rule.name}" padan "${pattern}" (${rule.matchType === 'exact' ? 'tepat' : 'frasa'})${rule.startsLead ? ', keyword lead' : ''}`,
+    ruleId: rule.id,
+    ruleName: rule.name,
+    pattern,
+    reply: rule.replyText,
+    setLabel: rule.setLabel,
+    handover: rule.handover,
+    startsLead: !!rule.startsLead,
+  };
 }
 
 /** Fixed guardrails appended to every tenant instruction. */
@@ -87,7 +98,7 @@ interface Snapshot {
 async function loadContext(tx: Tx, messageId: string) {
   const { rows } = await tx.query(
     `SELECT m.id, m.body, m.direction, m.route, m.conversation_id, m.created_at,
-            c.human_takeover, c.ai_enabled AS conv_ai, c.contact_id, c.channel_id,
+            c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at IS NOT NULL AS is_lead, c.contact_id, c.channel_id,
             ch.automation_enabled, ch.ai_enabled AS channel_ai,
             ct.opted_out_at IS NOT NULL AS opted_out,
             EXISTS (SELECT 1 FROM messages n WHERE n.conversation_id = m.conversation_id AND n.direction = 'inbound'
@@ -147,6 +158,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       automationEnabled: m.automation_enabled,
       humanTakeover: m.human_takeover,
       optedOut: m.opted_out,
+      isLead: m.is_lead,
       aiAllowed,
       settings,
       rules,
@@ -175,6 +187,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: replyDelayMs(settings) });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
+        if (d.startsLead) await tx.query('UPDATE conversations SET lead_started_at = coalesce(lead_started_at, now()) WHERE id = $1', [m.conversation_id]);
         await tx.query(
           `INSERT INTO keyword_rule_hits (tenant_id, conversation_id, rule_id, last_hit_at) VALUES ($1, $2, $3, now())
            ON CONFLICT (conversation_id, rule_id) DO UPDATE SET last_hit_at = now()`,

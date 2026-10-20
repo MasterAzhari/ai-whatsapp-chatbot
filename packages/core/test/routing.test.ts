@@ -61,17 +61,28 @@ const baseSettings: BotSettings = {
   version: 1, personaName: 'Bot', language: 'ms', systemInstruction: '', aiEnabled: true, aiProvider: 'gemini',
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
   fallbackReply: null, handoverReply: 'Staf akan balas', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
-  replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false,
+  replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false, leadMode: false,
 };
 
 describe('decide order', () => {
   const d = (o: Partial<Parameters<typeof decide>[0]>) =>
-    decide({ text: 'harga', channelId: 'ch', automationEnabled: true, humanTakeover: false, optedOut: false, aiAllowed: true,
+    decide({ text: 'harga', channelId: 'ch', automationEnabled: true, humanTakeover: false, optedOut: false, isLead: false, aiAllowed: true,
       settings: baseSettings, rules: [rule({ patterns: ['harga', 'stop', 'nak cakap dengan orang'] })], ...o });
   test('switches and takeover first', () => {
     assert.equal(d({ automationEnabled: false }).route, 'none');
     assert.equal(d({ humanTakeover: true }).route, 'none');
     assert.equal(d({ optedOut: true }).route, 'none');
+  });
+  test('lead mode: silent until a lead keyword, then normal', () => {
+    const leadMode = { ...baseSettings, leadMode: true };
+    const rules = [rule({ name: 'Lead', patterns: ['nak info aircond'], startsLead: true }), rule({ name: 'Harga', patterns: ['harga'] })];
+    assert.equal(d({ settings: leadMode, rules, text: 'hello' }).route, 'none');
+    assert.equal(d({ settings: leadMode, rules, text: 'harga' }).route, 'none');
+    assert.equal(d({ settings: leadMode, rules, text: 'STOP' }).route, 'none');
+    const lead = d({ settings: leadMode, rules, text: 'Saya nak info Aircond' });
+    assert.ok(lead.route === 'keyword' && lead.startsLead);
+    assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'harga' }).route, 'keyword');
+    assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'hello' }).route, 'ai');
   });
   test('stop, then human, then keyword, then AI', () => {
     assert.equal(d({ text: 'STOP' }).route, 'stop');
@@ -230,6 +241,24 @@ describe('routing', () => {
   const deps = { aiFor: async () => ai as AIProvider };
   beforeEach(() => {
     ai = new ScriptedAI({ ok: true, text: 'Jawapan AI', usage: { inputTokens: 10, outputTokens: 4 }, model: 'gemini-test', latencyMs: 5 });
+  });
+
+  test('lead mode: only chats that came in with a lead keyword get bot or AI replies', async () => {
+    const lead = await createKeywordRule(db, ctxA, { name: 'Lead aircond', matchType: 'phrase', patterns: ['saya nak info aircond'], replyText: 'Hai Cik, saya Fairuz.', startsLead: true });
+    await settings({ leadMode: true });
+    try {
+      const from = `lead-${randomUUID()}`;
+      assert.equal(await routeInbound(db, tA, (await inbound('hello', from)).messageId, deps), 'none');
+      assert.equal(await routeInbound(db, tA, (await inbound('harga?', `team-${randomUUID()}`)).messageId, deps), 'none');
+      assert.equal(ai.calls, 0);
+      assert.equal(await routeInbound(db, tA, (await inbound('Saya nak info Aircond', from)).messageId, deps), 'keyword');
+      assert.equal(await routeInbound(db, tA, (await inbound('boleh hantar ke Kedah?', from)).messageId, deps), 'ai_reply');
+      assert.equal(ai.calls, 1);
+    } finally {
+      while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
+      await settings({ leadMode: false });
+      await updateKeywordRule(db, ctxA, lead.id, lead.version, { name: 'Lead aircond', matchType: 'phrase', patterns: ['saya nak info aircond'], replyText: 'x', enabled: false });
+    }
   });
 
   test('keyword reply is queued once even if routed twice, and sent', async () => {

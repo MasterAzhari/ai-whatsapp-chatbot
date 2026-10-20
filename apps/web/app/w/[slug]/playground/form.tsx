@@ -20,6 +20,7 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
         </label>
         <label>Mesej pelanggan<textarea name="text" rows={3} required maxLength={4096} defaultValue={state.text} /></label>
         <label className="check"><input type="checkbox" name="callAi" /> Panggil AI sebenar jika tiada keyword padan (guna token)</label>
+        <label className="check"><input type="checkbox" name="isLead" defaultChecked /> Anggap chat ini sudah lead (untuk mod &quot;Layan lead sahaja&quot;)</label>
         <button className="primary" type="submit" disabled={pending}>{pending ? 'Menguji…' : 'Uji'}</button>
       </form>
       {(state.route || state.error) && (

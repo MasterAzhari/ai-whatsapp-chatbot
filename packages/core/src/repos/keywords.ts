@@ -23,6 +23,7 @@ function fromRow(r: Record<string, any>): KeywordRuleView {
     setLabel: r.set_label,
     handover: r.handover,
     cooldownSeconds: r.cooldown_seconds,
+    startsLead: r.starts_lead,
     version: r.version,
     updatedAt: r.updated_at.toISOString(),
   };
@@ -49,6 +50,7 @@ export const RuleInput = z
     setLabel: z.string().trim().max(60).nullable().default(null),
     handover: z.boolean().default(false),
     cooldownSeconds: z.number().int().min(0).max(30 * 24 * 3600).default(0),
+    startsLead: z.boolean().default(false),
   })
   .refine((r) => r.replyText || r.setLabel || r.handover, 'a rule needs a reply, a label or handover');
 
@@ -57,9 +59,9 @@ export async function createKeywordRule(db: Db, ctx: TenantContext, input: z.inp
   const v = RuleInput.parse(input);
   return inTenant(db, ctx, async (tx) => {
     const { rows } = await tx.query(
-      `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-      [ctx.tenantId, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds],
+      `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [ctx.tenantId, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead],
     );
     const rule = fromRow(rows[0]);
     await audit(tx, ctx, 'keyword_rule.create', 'keyword_rule', rule.id, null, rule, source);
@@ -82,9 +84,9 @@ export async function updateKeywordRule(
     if (!before.rows[0]) throw new Error('rule not found');
     const { rows } = await tx.query(
       `UPDATE keyword_rules SET channel_id = $3, name = $4, match_type = $5, patterns = $6, priority = $7, enabled = $8,
-              reply_text = $9, set_label = $10, handover = $11, cooldown_seconds = $12, version = version + 1, updated_at = now()
+              reply_text = $9, set_label = $10, handover = $11, cooldown_seconds = $12, starts_lead = $13, version = version + 1, updated_at = now()
         WHERE id = $1 AND version = $2 RETURNING *`,
-      [id, expectedVersion, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds],
+      [id, expectedVersion, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead],
     );
     if (!rows[0]) throw new VersionConflictError('rule changed since you loaded it; reload and try again');
     const rule = fromRow(rows[0]);

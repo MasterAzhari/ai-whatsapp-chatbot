@@ -17,7 +17,7 @@ export async function runPlayground(_prev: PlaygroundState, f: FormData): Promis
   const text = String(f.get('text') ?? '').slice(0, 4096);
   try {
     const ctx = await requireTenant(slug);
-    const r = await simulate(db(), ctx, { text, channelId: String(f.get('channelId')), callAi: f.get('callAi') === 'on' }, createAiResolver(db()));
+    const r = await simulate(db(), ctx, { text, channelId: String(f.get('channelId')), callAi: f.get('callAi') === 'on', isLead: f.get('isLead') === 'on' }, createAiResolver(db()));
     const route = { route: r.route.route, reason: r.route.reason, reply: 'reply' in r.route ? r.route.reply : null };
     if (!r.ai) return { text, route };
     const ai = r.ai.ok

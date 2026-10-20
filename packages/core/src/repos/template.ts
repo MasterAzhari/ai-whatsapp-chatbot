@@ -23,6 +23,7 @@ const TemplateRule = z.object({
   setLabel: z.string().nullable(),
   handover: z.boolean(),
   cooldownSeconds: z.number().int(),
+  startsLead: z.boolean().optional(),
 });
 
 export const BotTemplate = z.object({
@@ -91,9 +92,9 @@ export async function importBotTemplate(
     if (opts.replaceRules) rulesRemoved = (await tx.query('DELETE FROM keyword_rules')).rowCount ?? 0;
     for (const v of rules) {
       await tx.query(
-        `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds)
-         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [ctx.tenantId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds],
+        `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [ctx.tenantId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead],
       );
     }
     const result = { rulesAdded: rules.length, rulesRemoved };

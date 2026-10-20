@@ -28,6 +28,7 @@ export interface KeywordRule {
   setLabel: string | null;
   handover: boolean;
   cooldownSeconds: number;
+  startsLead?: boolean; // matching it makes the chat a lead (lead mode)
 }
 
 /** Returns the pattern that matched, or null. */
