@@ -4,7 +4,7 @@ import { actionError, db, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
 
-const MAX_FILE_BYTES = 1_000_000;
+const MAX_FILE_BYTES = 15 * 1024 * 1024; // room for a few keyword pictures
 
 /** Runs a change, then returns to the page with an error or a saved notice. */
 async function run(path: string, fn: () => Promise<{ rulesAdded: number; rulesRemoved: number }>, target: string) {

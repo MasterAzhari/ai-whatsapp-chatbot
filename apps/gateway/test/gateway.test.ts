@@ -41,3 +41,12 @@ test('pairs, then sends idempotently', async () => {
   const b = await (await call(`/channels/${ch}/send-text`, { to: 'x', text: 'hi', idempotencyKey: 'k1' })).json();
   assert.equal(a.providerMessageId, b.providerMessageId);
 });
+
+test('sends a picture with a caption; rejects other file types', async () => {
+  const png = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  const ok = await call(`/channels/${ch}/send-image`, { to: 'x', caption: 'Poster promo', mimeType: 'image/png', data: png, idempotencyKey: 'img1' });
+  assert.equal(ok.status, 200);
+  assert.ok((await ok.json()).providerMessageId);
+  const bad = await call(`/channels/${ch}/send-image`, { to: 'x', mimeType: 'application/pdf', data: png, idempotencyKey: 'img2' });
+  assert.equal(bad.status, 400);
+});

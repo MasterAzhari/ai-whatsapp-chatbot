@@ -16,7 +16,7 @@ export type Route =
   | { route: 'none'; reason: string }
   | { route: 'stop'; reason: string }
   | { route: 'human'; reason: string; reply: string | null }
-  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; setLabel: string | null; handover: boolean; startsLead: boolean }
+  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; imageAssetId: string | null; setLabel: string | null; handover: boolean; startsLead: boolean }
   | { route: 'media'; reason: string; reply: string | null }
   | { route: 'ai'; reason: string };
 
@@ -82,6 +82,7 @@ function keywordRoute(rule: KeywordRule, pattern: string): Route {
     ruleName: rule.name,
     pattern,
     reply: rule.replyText,
+    imageAssetId: rule.imageAssetId ?? null,
     setLabel: rule.setLabel,
     handover: rule.handover,
     startsLead: !!rule.startsLead,
@@ -310,8 +311,11 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         // Hand over first: the rule's reply then goes out as the handover notice
         // (origin system), which takeover does not block.
         if (d.handover) await handOver(tx, m.conversation_id);
-        if (d.reply) {
-          await enqueueReply(tx, { tenantId, conversationId: m.conversation_id, text: d.reply, origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: replyDelayMs(settings) });
+        if (d.reply || d.imageAssetId) {
+          await enqueueReply(tx, {
+            tenantId, conversationId: m.conversation_id, text: d.reply ?? '', imageAssetId: d.imageAssetId,
+            origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: replyDelayMs(settings),
+          });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
         // A lead keyword after the window has passed (a new ad click) starts a new window.

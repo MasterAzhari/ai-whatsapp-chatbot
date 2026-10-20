@@ -11,6 +11,7 @@ export interface EnqueueReplyInput {
   idempotencyKey: string;
   expiresInMs?: number; // automated replies go stale; human replies default to 24h
   delayMs?: number; // wait before the first send attempt (reply pacing)
+  imageAssetId?: string | null; // picture sent with the text as its caption
 }
 
 /**
@@ -33,9 +34,9 @@ export async function enqueueReply(tx: Tx, input: EnqueueReplyInput): Promise<{ 
   const channelId = conv.rows[0].channel_id;
 
   const msg = await tx.query<{ id: string }>(
-    `INSERT INTO messages (tenant_id, conversation_id, channel_id, direction, origin, body, status, author_user_id)
-     VALUES ($1, $2, $3, 'outbound', $4, $5, 'queued', $6) RETURNING id`,
-    [input.tenantId, input.conversationId, channelId, input.origin, input.text, input.authorUserId ?? null],
+    `INSERT INTO messages (tenant_id, conversation_id, channel_id, direction, origin, body, status, author_user_id, image_asset_id)
+     VALUES ($1, $2, $3, 'outbound', $4, $5, 'queued', $6, $7) RETURNING id`,
+    [input.tenantId, input.conversationId, channelId, input.origin, input.text || null, input.authorUserId ?? null, input.imageAssetId ?? null],
   );
   const messageId = msg.rows[0]!.id;
   const ttl = input.expiresInMs ?? (input.origin === 'human' ? 24 * 3600_000 : 15 * 60_000);
@@ -124,12 +125,13 @@ function backoffMs(attempt: number): number {
 export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolver): Promise<ProcessOutcome> {
   const prep = await withTenant(db, job.tenantId, async (tx) => {
     const { rows } = await tx.query(
-      `SELECT m.body, m.origin, o.expires_at < now() AS expired, o.state,
+      `SELECT m.body, m.origin, img.mime_type AS image_type, img.data AS image_data, o.expires_at < now() AS expired, o.state,
               coalesce((SELECT typing_indicator FROM bot_settings b WHERE b.tenant_id = o.tenant_id), false) AS typing,
               c.human_takeover, ch.automation_enabled, ct.opted_out_at IS NOT NULL AS opted_out,
               pim.provider_identity
          FROM outbox o
          JOIN messages m ON m.id = o.message_id
+         LEFT JOIN media_assets img ON img.id = m.image_asset_id
          JOIN conversations c ON c.id = o.conversation_id
          JOIN channels ch ON ch.id = o.channel_id
          JOIN contacts ct ON ct.id = c.contact_id
@@ -168,7 +170,10 @@ export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolve
   try {
     // Show "typing…" for a time that grows with the length of an automated reply.
     const typingMs = automated && prep.typing ? Math.min(6000, 1000 + (prep.body ?? '').length * 30) : 0;
-    result = await adapter.sendText({ to: prep.provider_identity, text: prep.body ?? '', idempotencyKey: job.idempotencyKey, typingMs });
+    const send = { to: prep.provider_identity, text: prep.body ?? '', idempotencyKey: job.idempotencyKey, typingMs };
+    result = prep.image_data && adapter.sendMedia
+      ? await adapter.sendMedia({ ...send, attachment: { kind: 'image', mimeType: prep.image_type, data: (prep.image_data as Buffer).toString('base64') } })
+      : await adapter.sendText(send);
   } catch (err) {
     result = { ok: false as const, retryable: false, unknown: true, error: (err as Error).message };
   }

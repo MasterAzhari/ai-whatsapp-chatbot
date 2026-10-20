@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import makeWASocket, { Browsers, DisconnectReason, downloadMediaMessage, fetchLatestBaileysVersion, generateMessageIDV2, useMultiFileAuthState, type WAMessage, type WASocket } from 'baileys';
-import type { InboundSink, SessionDriver } from './sessions.js';
+import type { InboundSink, OutgoingImage, SessionDriver } from './sessions.js';
 import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid, READABLE_MEDIA, readableAttachment, type GatewayEvent } from './normalize.js';
 
 type State = ReturnType<SessionDriver['status']>;
@@ -144,7 +144,7 @@ export class BaileysSessionDriver implements SessionDriver {
     this.state = { state: 'disconnected' };
   }
 
-  async sendText(to: string, text: string, idempotencyKey: string, typingMs = 0): Promise<{ providerMessageId: string }> {
+  async sendText(to: string, text: string, idempotencyKey: string, typingMs = 0, image?: OutgoingImage): Promise<{ providerMessageId: string }> {
     const done = this.sentByKey.get(idempotencyKey);
     if (done) return { providerMessageId: done };
     if (!this.sock || this.state.state !== 'connected') throw Object.assign(new Error('session not connected'), { status: 409 });
@@ -159,7 +159,8 @@ export class BaileysSessionDriver implements SessionDriver {
     const ownId = generateMessageIDV2(this.sock.user?.id);
     this.ownIds.add(ownId);
     if (this.ownIds.size > 5000) this.ownIds.delete(this.ownIds.values().next().value!);
-    const sent = await this.sock.sendMessage(to, { text }, { messageId: ownId });
+    const content = image ? { image: image.data, mimetype: image.mimeType, ...(text ? { caption: text } : {}) } : { text };
+    const sent = await this.sock.sendMessage(to, content, { messageId: ownId });
     const id = sent?.key.id;
     if (id) this.ownIds.add(id);
     if (!id) throw new Error('WhatsApp did not return a message id');

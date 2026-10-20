@@ -29,6 +29,8 @@ export interface MessageView {
   body: string | null;
   /** Readable names of media sent with the message, e.g. "Voice note". */
   attachments: string[];
+  /** Picture this system sent with the message (keyword replies). */
+  imageAssetId: string | null;
   status: string;
   statusDetail: string | null;
   route: { route: string; reason: string } | null; // why an inbound message was (not) answered
@@ -54,7 +56,7 @@ export async function listConversations(db: Db, ctx: TenantContext, filter: z.in
     const { rows } = await tx.query(
       `SELECT c.id, c.status, c.human_takeover, c.lead_started_at, ct.display_name, ct.phone_e164, ch.name AS channel_name,
               c.last_message_at,
-              (SELECT coalesce(left(body, 120), '[' || (attachments->0->>'kind') || ']') FROM messages m
+              (SELECT coalesce(left(body, 120), '[' || coalesce(attachments->0->>'kind', CASE WHEN image_asset_id IS NOT NULL THEN 'image' END) || ']') FROM messages m
                 WHERE m.conversation_id = c.id AND m.direction <> 'note'
                 ORDER BY created_at DESC LIMIT 1) AS preview
          FROM conversations c
@@ -93,7 +95,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
     if (!r) return null;
     const settings = await loadSettings(tx, ctx.tenantId);
     const m = await tx.query(
-      `SELECT id, direction, origin, body, attachments, status, status_detail, route, created_at
+      `SELECT id, direction, origin, body, attachments, image_asset_id, status, status_detail, route, created_at
          FROM messages WHERE conversation_id = $1 ORDER BY created_at, id`,
       [id],
     );
@@ -114,6 +116,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
         direction: x.direction,
         origin: x.origin,
         body: x.body,
+        imageAssetId: x.image_asset_id,
         attachments: ((x.attachments ?? []) as Array<{ kind: string }>).map((a) => MEDIA_LABEL[a.kind] ?? 'Lampiran'),
         status: x.status,
         statusDetail: x.status_detail,

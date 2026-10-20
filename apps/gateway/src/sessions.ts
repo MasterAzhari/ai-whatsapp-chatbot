@@ -10,7 +10,13 @@ export interface SessionDriver {
   status(): { state: 'disconnected' | 'pairing' | 'connected' | 'error'; reason?: string; displayNumber?: string; qr?: string };
   connect(): Promise<void>;
   logout(): Promise<void>;
-  sendText(to: string, text: string, idempotencyKey: string, typingMs?: number): Promise<{ providerMessageId: string }>;
+  /** Sends text, or a picture with the text as its caption when image is given. */
+  sendText(to: string, text: string, idempotencyKey: string, typingMs?: number, image?: OutgoingImage): Promise<{ providerMessageId: string }>;
+}
+
+export interface OutgoingImage {
+  data: Buffer;
+  mimeType: string;
 }
 
 export type InboundSink = (channelId: string, events: unknown[]) => Promise<void>;

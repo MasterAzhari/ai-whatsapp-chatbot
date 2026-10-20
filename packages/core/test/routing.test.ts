@@ -17,7 +17,7 @@ import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js'
 import { addQrChannel, connectQrChannel, qrChannelStatus } from '../src/repos/channels.js';
 import { routeOnce } from '../src/worker.js';
 import { simulate } from '../src/routing/playground.js';
-import { createKeywordRule, listKeywordRules, updateKeywordRule } from '../src/repos/keywords.js';
+import { createKeywordRule, getImageAsset, listKeywordRules, saveImageAsset, updateKeywordRule } from '../src/repos/keywords.js';
 import { getBotSettings, setCredential, updateBotSettings, VersionConflictError, type BotSettings } from '../src/repos/settings.js';
 import { getUsageSummary } from '../src/repos/usage.js';
 import { createAiResolver } from '../src/routing/ai-resolver.js';
@@ -625,6 +625,34 @@ describe('bot template (copy setup to an agent workspace)', () => {
     const t = await exportBotTemplate(db, ctxA);
     await assert.rejects(importBotTemplate(db, ctxC, { ...t, settings: { ...t.settings, replyDelayMinSec: 9, replyDelayMaxSec: 2 } }, { replaceRules: false }));
     await assert.rejects(importBotTemplate(db, { ...ctxC, role: 'operator' }, t, { replaceRules: false }));
+  });
+
+  test('a keyword picture is sent with its caption and copies with the template', async () => {
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    await assert.rejects(saveImageAsset(db, ctxA, 'application/pdf', png));
+    const img = await saveImageAsset(db, ctxA, 'image/png', png);
+    await assert.rejects(createKeywordRule(db, ctxC, { name: 'X', matchType: 'phrase', patterns: ['x'], imageAssetId: img })); // other workspace's picture
+    await assert.rejects(createKeywordRule(db, ctxA, { name: 'Long', matchType: 'phrase', patterns: ['long'], replyText: 'a'.repeat(1001), imageAssetId: img }));
+    await createKeywordRule(db, ctxA, { name: 'Poster', matchType: 'phrase', patterns: ['poster promo'], replyText: 'Ini poster promo kami', imageAssetId: img });
+    await createKeywordRule(db, ctxA, { name: 'Gambar sahaja', matchType: 'phrase', patterns: ['gambar aircond'], imageAssetId: img });
+
+    const m = await inbound('boleh hantar poster promo?');
+    assert.equal(await routeInbound(db, tA, m.messageId, { aiFor: async () => null }), 'keyword');
+    await drainOnce(db, resolveAdapter);
+    const sent = adapter.sent.at(-1)!;
+    assert.equal(sent.text, 'Ini poster promo kami');
+    assert.deepEqual([sent.attachment?.mimeType, sent.attachment?.data], ['image/png', png.toString('base64')]);
+    const out = (await getConversation(db, ctxA, m.conversationId))!.messages.at(-1)!;
+    assert.equal(out.imageAssetId, img);
+    assert.equal((await getImageAsset(db, ctxB, img)), null); // not visible to another workspace
+
+    const t = JSON.parse(JSON.stringify(await exportBotTemplate(db, ctxA)));
+    assert.equal(t.keywordRules.find((r: any) => r.name === 'Poster').image.data, png.toString('base64'));
+    await importBotTemplate(db, ctxC, t, { replaceRules: true });
+    const copied = (await listKeywordRules(db, ctxC)).filter((r) => r.imageAssetId);
+    assert.equal(copied.length, 2);
+    assert.notEqual(copied[0]!.imageAssetId, img); // its own copy
+    assert.deepEqual((await getImageAsset(db, ctxC, copied[0]!.imageAssetId!))!.data, png);
   });
 });
 

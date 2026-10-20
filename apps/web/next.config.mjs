@@ -2,6 +2,8 @@
 const nextConfig = {
   serverExternalPackages: ['pg'],
   poweredByHeader: false,
+  // Keyword pictures (up to 5 MB) and templates that carry them are uploaded through server actions.
+  experimental: { serverActions: { bodySizeLimit: '16mb' } },
   async headers() {
     return [
       {

@@ -1,10 +1,18 @@
 import { redirect } from 'next/navigation';
-import { createKeywordRule, deleteKeywordRule, getDashboard, listKeywordRules, setKeywordRuleEnabled, updateKeywordRule, type KeywordRuleView } from '@chatbot/core';
+import { createKeywordRule, deleteKeywordRule, getDashboard, listKeywordRules, saveImageAsset, setKeywordRuleEnabled, updateKeywordRule, type KeywordRuleView, type TenantContext } from '@chatbot/core';
 import { actionError, db, lines, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
 
-function ruleFromForm(f: FormData) {
+/** The rule's picture: a new upload, kept as it was, or removed. */
+async function imageFromForm(ctx: TenantContext, f: FormData): Promise<string | null> {
+  const file = f.get('image');
+  if (file instanceof File && file.size > 0) return saveImageAsset(db(), ctx, file.type, Buffer.from(await file.arrayBuffer()));
+  if (f.get('removeImage') === 'on') return null;
+  return String(f.get('currentImage') ?? '') || null;
+}
+
+function ruleFromForm(f: FormData, imageAssetId: string | null) {
   const reply = String(f.get('replyText') ?? '').trim();
   const label = String(f.get('setLabel') ?? '').trim();
   const channel = String(f.get('channelId') ?? '');
@@ -20,6 +28,7 @@ function ruleFromForm(f: FormData) {
     handover: f.get('handover') === 'on',
     startsLead: f.get('startsLead') === 'on',
     cooldownSeconds: Math.round(Number(f.get('cooldownMinutes') || 0) * 60),
+    imageAssetId,
   };
 }
 
@@ -46,12 +55,12 @@ export default async function Keywords({ params, searchParams }: { params: Promi
   async function create(f: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await run(path, () => createKeywordRule(db(), ctx, ruleFromForm(f)));
+    await run(path, async () => createKeywordRule(db(), ctx, ruleFromForm(f, await imageFromForm(ctx, f))));
   }
   async function update(f: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await run(path, () => updateKeywordRule(db(), ctx, String(f.get('id')), Number(f.get('version')), ruleFromForm(f)));
+    await run(path, async () => updateKeywordRule(db(), ctx, String(f.get('id')), Number(f.get('version')), ruleFromForm(f, await imageFromForm(ctx, f))));
   }
   async function toggle(f: FormData) {
     'use server';
@@ -86,6 +95,7 @@ export default async function Keywords({ params, searchParams }: { params: Promi
                 <td>{r.name}{r.channelId && <div className="small muted">{channels.find((c) => c.id === r.channelId)?.name ?? 'channel lain'}</div>}</td>
                 <td><span className="small muted">{r.matchType === 'exact' ? 'tepat' : 'frasa'}:</span> {r.patterns.join(', ')}</td>
                 <td className="small">
+                  {r.imageAssetId && <img src={`/w/${slug}/media/${r.imageAssetId}`} alt="Gambar" style={{ display: 'block', maxWidth: 80, borderRadius: 6, marginBottom: 4 }} />}
                   {r.replyText && <div>Balas: {r.replyText.slice(0, 80)}</div>}
                   {r.setLabel && <div>Label: {r.setLabel}</div>}
                   {r.startsLead && <div><span className="badge ok">Keyword lead</span></div>}
@@ -117,7 +127,7 @@ export default async function Keywords({ params, searchParams }: { params: Promi
       {isAdmin && (
         <div className="panel">
           <h2 style={{ marginTop: 0 }}>{editing ? `Ubah "${editing.name}"` : 'Peraturan baru'}</h2>
-          <RuleForm key={editing?.id ?? 'new'} action={editing ? update : create} rule={editing} channels={channels} />
+          <RuleForm key={editing?.id ?? 'new'} action={editing ? update : create} rule={editing} channels={channels} slug={slug} />
           {editing && <a href={path}>Batal</a>}
         </div>
       )}
@@ -125,7 +135,7 @@ export default async function Keywords({ params, searchParams }: { params: Promi
   );
 }
 
-function RuleForm({ action, rule, channels }: { action: (f: FormData) => Promise<void>; rule?: KeywordRuleView; channels: Array<{ id: string; name: string }> }) {
+function RuleForm({ action, rule, channels, slug }: { action: (f: FormData) => Promise<void>; rule?: KeywordRuleView; channels: Array<{ id: string; name: string }>; slug: string }) {
   return (
     <form action={action} className="form">
       {rule && <input type="hidden" name="id" value={rule.id} />}
@@ -140,6 +150,17 @@ function RuleForm({ action, rule, channels }: { action: (f: FormData) => Promise
       </label>
       <label>Keyword (satu setiap baris)<textarea name="patterns" rows={3} required defaultValue={rule?.patterns.join('\n')} /></label>
       <label>Balasan tetap<textarea name="replyText" rows={3} maxLength={4096} defaultValue={rule?.replyText ?? ''} /></label>
+      <label>
+        Gambar bersama balasan (pilihan: poster atau gambar produk, JPG/PNG/WebP sehingga 5 MB; balasan jadi kapsyen, maksimum 1000 aksara)
+        {rule?.imageAssetId && <img src={`/w/${slug}/media/${rule.imageAssetId}`} alt="Gambar semasa" style={{ display: 'block', maxWidth: 160, borderRadius: 8, margin: '6px 0' }} />}
+        <input type="file" name="image" accept="image/jpeg,image/png,image/webp" />
+      </label>
+      {rule?.imageAssetId && (
+        <>
+          <input type="hidden" name="currentImage" value={rule.imageAssetId} />
+          <label className="check"><input type="checkbox" name="removeImage" /> Buang gambar</label>
+        </>
+      )}
       <label>Label pelanggan (pilihan)<input name="setLabel" maxLength={60} defaultValue={rule?.setLabel ?? ''} /></label>
       <label>
         Channel

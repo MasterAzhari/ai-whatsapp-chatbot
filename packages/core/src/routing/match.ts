@@ -28,6 +28,7 @@ export interface KeywordRule {
   setLabel: string | null;
   handover: boolean;
   cooldownSeconds: number;
+  imageAssetId?: string | null; // picture sent with the reply
   startsLead?: boolean; // matching it makes the chat a lead (lead mode)
 }
 

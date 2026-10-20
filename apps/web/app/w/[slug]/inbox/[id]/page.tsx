@@ -69,6 +69,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
         <div className="thread">
           {messages.map((m) => (
             <div key={m.id} className={`bubble ${m.direction}`}>
+              {m.imageAssetId && <img src={`/w/${slug}/media/${m.imageAssetId}`} alt="Gambar dihantar" style={{ display: 'block', maxWidth: 220, borderRadius: 8, marginBottom: 6 }} />}
               {m.attachments.length > 0 && <div className="small"><b>📎 {m.attachments.join(', ')}</b> <span className="muted">(buka di WhatsApp telefon)</span></div>}
               {m.body}
               <div className="meta">

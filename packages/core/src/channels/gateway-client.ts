@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelStatus, NormalizedEvent, SendResult, SendTextInput } from './adapter.js';
+import type { Attachment, ChannelAdapter, ChannelStatus, NormalizedEvent, SendResult, SendTextInput } from './adapter.js';
 
 /**
  * Talks to the separate whatsapp-gateway container (QR / linked-device sessions)
@@ -19,12 +19,12 @@ export class GatewayChannelAdapter implements ChannelAdapter {
     return { connectDisconnect: true, templates: false, serviceWindowHours: null, media: true, deliveryReceipts: true };
   }
 
-  private async call(path: string, body?: unknown): Promise<Response> {
+  private async call(path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<Response> {
     return fetch(`${this.baseUrl}/channels/${encodeURIComponent(this.channelId)}${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   }
 
@@ -48,9 +48,19 @@ export class GatewayChannelAdapter implements ChannelAdapter {
   }
 
   async sendText(input: SendTextInput): Promise<SendResult> {
+    return this.send('/send-text', input);
+  }
+
+  /** A picture with the text as its caption (keyword replies with a poster or photo). */
+  async sendMedia(input: SendTextInput & { attachment: Attachment }): Promise<SendResult> {
+    const { attachment, ...rest } = input;
+    return this.send('/send-image', { ...rest, caption: rest.text, mimeType: attachment.mimeType, data: attachment.data }, 60_000);
+  }
+
+  private async send(path: string, body: unknown, timeoutMs = this.timeoutMs): Promise<SendResult> {
     let res: Response;
     try {
-      res = await this.call('/send-text', input);
+      res = await this.call(path, body, timeoutMs);
     } catch (err) {
       // A timeout after the request left means it may or may not have been sent.
       const e = err as Error;

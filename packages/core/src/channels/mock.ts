@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ChannelAdapter, ChannelStatus, NormalizedEvent, SendResult, SendTextInput } from './adapter.js';
+import type { Attachment, ChannelAdapter, ChannelStatus, NormalizedEvent, SendResult, SendTextInput } from './adapter.js';
 
 /**
  * MOCK adapter: records sends in memory and never talks to WhatsApp. Used for
@@ -8,7 +8,7 @@ import type { ChannelAdapter, ChannelStatus, NormalizedEvent, SendResult, SendTe
  */
 export class MockChannelAdapter implements ChannelAdapter {
   readonly kind = 'mock' as const;
-  readonly sent: Array<SendTextInput & { providerMessageId: string }> = [];
+  readonly sent: Array<SendTextInput & { providerMessageId: string; attachment?: Attachment }> = [];
   /** Next results to return instead of success, consumed in order. */
   readonly script: SendResult[] = [];
   private readonly byKey = new Map<string, string>();
@@ -31,6 +31,10 @@ export class MockChannelAdapter implements ChannelAdapter {
     this.byKey.set(input.idempotencyKey, providerMessageId);
     this.sent.push({ ...input, providerMessageId });
     return { ok: true, providerMessageId, status: 'sent' };
+  }
+
+  async sendMedia(input: SendTextInput & { attachment: Attachment }): Promise<SendResult> {
+    return this.sendText(input); // recorded with its attachment
   }
 
   normalizeInboundEvent(raw: unknown): NormalizedEvent[] {
