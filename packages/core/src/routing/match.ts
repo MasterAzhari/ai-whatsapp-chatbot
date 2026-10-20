@@ -30,6 +30,7 @@ export interface KeywordRule {
   cooldownSeconds: number;
   imageAssetId?: string | null; // picture sent with the reply
   startsLead?: boolean; // matching it makes the chat a lead (lead mode)
+  aiReply?: boolean; // the AI answers instead of the fixed reply (falls back to it when AI is off)
 }
 
 /** Returns the pattern that matched, or null. */

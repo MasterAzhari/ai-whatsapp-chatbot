@@ -25,6 +25,7 @@ function fromRow(r: Record<string, any>): KeywordRuleView {
     handover: r.handover,
     cooldownSeconds: r.cooldown_seconds,
     startsLead: r.starts_lead,
+    aiReply: r.ai_reply,
     imageAssetId: r.image_asset_id,
     version: r.version,
     updatedAt: r.updated_at.toISOString(),
@@ -56,9 +57,10 @@ export const RuleInput = z
     handover: z.boolean().default(false),
     cooldownSeconds: z.number().int().min(0).max(30 * 24 * 3600).default(0),
     startsLead: z.boolean().default(false),
+    aiReply: z.boolean().default(false), // let the AI answer (with the whole chat) instead of replyText
     imageAssetId: z.string().uuid().nullable().default(null),
   })
-  .refine((r) => r.replyText || r.setLabel || r.handover || r.imageAssetId, 'a rule needs a reply, a picture, a label or handover')
+  .refine((r) => r.replyText || r.setLabel || r.handover || r.imageAssetId || r.aiReply, 'a rule needs a reply, a picture, a label, handover or AI')
   .refine((r) => !r.imageAssetId || (splitBubbles(r.replyText ?? '')[0] ?? '').length <= MAX_CAPTION, `balasan bersama gambar maksimum ${MAX_CAPTION} aksara`);
 
 async function checkImage(tx: Tx, id: string | null) {
@@ -71,9 +73,9 @@ export async function createKeywordRule(db: Db, ctx: TenantContext, input: z.inp
   return inTenant(db, ctx, async (tx) => {
     await checkImage(tx, v.imageAssetId);
     const { rows } = await tx.query(
-      `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-      [ctx.tenantId, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId],
+      `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+      [ctx.tenantId, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId, v.aiReply],
     );
     const rule = fromRow(rows[0]);
     await audit(tx, ctx, 'keyword_rule.create', 'keyword_rule', rule.id, null, rule, source);
@@ -97,9 +99,9 @@ export async function updateKeywordRule(
     await checkImage(tx, v.imageAssetId);
     const { rows } = await tx.query(
       `UPDATE keyword_rules SET channel_id = $3, name = $4, match_type = $5, patterns = $6, priority = $7, enabled = $8,
-              reply_text = $9, set_label = $10, handover = $11, cooldown_seconds = $12, starts_lead = $13, image_asset_id = $14, version = version + 1, updated_at = now()
+              reply_text = $9, set_label = $10, handover = $11, cooldown_seconds = $12, starts_lead = $13, image_asset_id = $14, ai_reply = $15, version = version + 1, updated_at = now()
         WHERE id = $1 AND version = $2 RETURNING *`,
-      [id, expectedVersion, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId],
+      [id, expectedVersion, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId, v.aiReply],
     );
     if (!rows[0]) throw new VersionConflictError('rule changed since you loaded it; reload and try again');
     const rule = fromRow(rows[0]);

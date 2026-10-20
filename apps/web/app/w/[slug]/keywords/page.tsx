@@ -27,6 +27,7 @@ function ruleFromForm(f: FormData, imageAssetId: string | null) {
     setLabel: label || null,
     handover: f.get('handover') === 'on',
     startsLead: f.get('startsLead') === 'on',
+    aiReply: f.get('aiReply') === 'on',
     cooldownSeconds: Math.round(Number(f.get('cooldownMinutes') || 0) * 60),
     imageAssetId,
   };
@@ -100,6 +101,7 @@ export default async function Keywords({ params, searchParams }: { params: Promi
                   {r.setLabel && <div>Label: {r.setLabel}</div>}
                   {r.startsLead && <div><span className="badge ok">Keyword lead</span></div>}
                   {r.handover && <div>Serah kepada manusia</div>}
+                  {r.aiReply && <div>AI jawab</div>}
                   {r.cooldownSeconds > 0 && <div className="muted">Rehat {Math.round(r.cooldownSeconds / 60)} min</div>}
                 </td>
                 <td><span className={`badge ${r.enabled ? 'ok' : 'warn'}`}>{r.enabled ? 'Hidup' : 'Mati'}</span></td>
@@ -172,6 +174,7 @@ function RuleForm({ action, rule, channels, slug }: { action: (f: FormData) => P
       </label>
       <label>Keutamaan (kecil dulu)<input name="priority" type="number" min={0} max={10000} defaultValue={rule?.priority ?? 100} /></label>
       <label>Rehat sebelum padan lagi dalam perbualan sama (minit)<input name="cooldownMinutes" type="number" min={0} step="1" defaultValue={rule ? Math.round(rule.cooldownSeconds / 60) : 0} /></label>
+      <label className="check"><input type="checkbox" name="aiReply" defaultChecked={rule?.aiReply} /> Biar AI jawab (AI baca seluruh chat; balasan di atas dipakai hanya jika AI mati)</label>
       <label className="check"><input type="checkbox" name="handover" defaultChecked={rule?.handover} /> Serahkan perbualan kepada manusia</label>
       <label className="check"><input type="checkbox" name="startsLead" defaultChecked={rule?.startsLead} /> Keyword lead: chat yang masuk dengan keyword ini dilayan bot dan AI (untuk mod &quot;Layan lead sahaja&quot;)</label>
       <label className="check"><input type="checkbox" name="enabled" defaultChecked={rule?.enabled ?? true} /> Hidup</label>

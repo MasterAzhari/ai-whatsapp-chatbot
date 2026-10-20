@@ -73,6 +73,11 @@ describe('decide order', () => {
   const d = (o: Partial<Parameters<typeof decide>[0]>) =>
     decide({ text: 'harga', channelId: 'ch', automationEnabled: true, humanTakeover: false, optedOut: false, isLead: false, aiAllowed: true,
       settings: baseSettings, rules: [rule({ patterns: ['harga', 'stop', 'nak cakap dengan orang'] })], ...o });
+  test('a keyword set to "AI answers" goes to the AI, or its own reply when AI is off', () => {
+    const rules = [rule({ name: 'Borang', patterns: ['form pendaftaran'], replyText: 'Terima kasih', aiReply: true })];
+    assert.equal(d({ text: 'FORM PENDAFTARAN nama Ali', rules }).route, 'ai');
+    assert.equal(d({ text: 'FORM PENDAFTARAN nama Ali', rules, aiAllowed: false }).route, 'keyword');
+  });
   test('switches and takeover first', () => {
     assert.equal(d({ automationEnabled: false }).route, 'none');
     assert.equal(d({ humanTakeover: true }).route, 'none');

@@ -62,6 +62,7 @@ export function decide(d: DecisionInput): Route {
   if (human) return { route: 'human', reason: `minta manusia ("${human}")`, reply: d.settings.handoverReply };
 
   const hit = pickRule(d.text, d.rules, { channelId: d.channelId, lastHitAt: d.lastHitAt });
+  if (hit?.rule.aiReply && d.aiAllowed) return { route: 'ai', reason: `peraturan "${hit.rule.name}" padan "${hit.pattern}": AI jawab` };
   if (hit) return keywordRoute(hit.rule, hit.pattern);
   if (!d.aiAllowed) return { route: 'none', reason: 'tiada keyword padan dan AI dimatikan' };
   return { route: 'ai', reason: 'tiada keyword padan' };
