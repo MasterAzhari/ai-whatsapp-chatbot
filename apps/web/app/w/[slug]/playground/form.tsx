@@ -48,6 +48,7 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
             (state.ai.ok ? (
               <>
                 {state.ai.bubbles?.map((b, i) => <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>{b}</div>)}
+                {state.ai.handover && <div className="small" style={{ marginTop: 8 }}><b>Serah kepada staf</b> · {state.ai.handover} (staf dapat notifikasi)</div>}
                 <div className="small muted">{state.ai.tokens}</div>
               </>
             ) : (

@@ -8,7 +8,7 @@ import { actionError, db, requireTenant } from '@/lib/server';
 export interface PlaygroundState {
   text?: string;
   route?: { route: string; reason: string; bubbles: string[]; imageAssetId: string | null };
-  ai?: { ok: boolean; bubbles?: string[]; detail?: string; reason?: string; tokens?: string };
+  ai?: { ok: boolean; bubbles?: string[]; handover?: string; detail?: string; reason?: string; tokens?: string };
   error?: string;
 }
 
@@ -26,7 +26,8 @@ export async function runPlayground(_prev: PlaygroundState, f: FormData): Promis
     const ai = r.ai.ok
       ? {
           ok: true,
-          bubbles: splitBubbles(r.ai.text),
+          bubbles: r.ai.text ? splitBubbles(r.ai.text) : [],
+          handover: r.aiHandover,
           tokens: `${r.ai.usage.inputTokens ?? 'tiada data'} masuk / ${r.ai.usage.outputTokens ?? 'tiada data'} keluar · ${r.ai.latencyMs} ms · ${r.ai.model}`,
         }
       : { ok: false, reason: r.ai.reason, detail: r.ai.detail };

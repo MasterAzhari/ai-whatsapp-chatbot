@@ -12,7 +12,7 @@ import { MockAIProvider, type AIProvider, type GenerateReplyInput, type Generate
 import { GeminiProvider, toContents } from '../src/ai/gemini.js';
 import { AnthropicProvider, toMessages } from '../src/ai/anthropic.js';
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
-import { decide, leadActive, routeInbound } from '../src/routing/router.js';
+import { decide, extractHandover, leadActive, routeInbound } from '../src/routing/router.js';
 import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
 import { addQrChannel, connectQrChannel, qrChannelStatus } from '../src/repos/channels.js';
 import { routeOnce } from '../src/worker.js';
@@ -964,5 +964,38 @@ describe('staff alerts on WhatsApp', () => {
       type: 'message', providerMessageId: randomUUID(), providerIdentity: 'staff-ntf', phoneE164: '+60123456789', text: 'ok noted', timestamp: new Date(),
     })) as { messageId: string };
     assert.equal(await routeInbound(db, tN, staff.messageId, { aiFor: async () => null }), 'none');
+  });
+});
+
+describe('AI hands a chat to staff', () => {
+  test('the [SERAH_STAF] tag is removed and its reason kept', () => {
+    assert.deepEqual(extractHandover('Terima kasih Cik 🙏\n[SERAH_STAF: borang lengkap]'), { text: 'Terima kasih Cik 🙏', handover: true, reason: 'borang lengkap' });
+    assert.deepEqual(extractHandover('[[serah staf]]'), { text: '', handover: true, reason: null });
+    assert.deepEqual(extractHandover('Harga RM115 [nota]'), { text: 'Harga RM115 [nota]', handover: false, reason: null });
+  });
+
+  test('a form given bit by bit: AI closes, chat goes to staff, staff are alerted', async () => {
+    const tH = await createTenant(db, { slug: 'aiho', name: 'H' });
+    const chH = await createChannel(db, tH, { name: 'H', provider: 'mock', status: 'connected', automationEnabled: true });
+    await withTenant(db, tH, async (tx) => {
+      await tx.query("INSERT INTO bot_settings (tenant_id, ai_enabled, ai_model, reply_delay_min_sec, reply_delay_max_sec, notify_numbers) VALUES ($1, true, 'gemini-test', 0, 0, '{60123456789}')", [tH]);
+      await tx.query('UPDATE channels SET ai_enabled = true WHERE id = $1', [chH]);
+    });
+    const ai = new MockAIProvider(() => 'Terima kasih Cik, maklumat dah lengkap 🙏 Team akan hubungi Cik.\n[SERAH_STAF: borang lengkap]');
+    const r = (await receiveInbound(db, tH, chH, {
+      type: 'message', providerMessageId: randomUUID(), providerIdentity: 'cust-aiho', text: 'Waris: Safura, isteri', timestamp: new Date(),
+    })) as { messageId: string; conversationId: string };
+    assert.equal(await routeInbound(db, tH, r.messageId, { aiFor: async () => ai }), 'ai_handover');
+    const before = adapter.sent.length;
+    while (Object.values(await drainOnce(db, resolveAdapter)).some((n) => n > 0));
+    assert.equal(await notifyOnce(db, resolveAdapter), 1);
+    const sent = adapter.sent.slice(before);
+    const toCustomer = sent.filter((x) => x.to === 'cust-aiho').map((x) => x.text);
+    assert.deepEqual(toCustomer, ['Terima kasih Cik, maklumat dah lengkap 🙏 Team akan hubungi Cik.']);
+    const alert = sent.find((x) => x.to === '60123456789@s.whatsapp.net' && x.text.includes('AI: borang lengkap'));
+    assert.ok(alert);
+    assert.ok(!sent.some((x) => x.text.includes('SERAH')));
+    const conv = await withTenant(db, tH, (tx) => tx.query('SELECT human_takeover, status FROM conversations WHERE id = $1', [r.conversationId]));
+    assert.deepEqual(conv.rows[0], { human_takeover: true, status: 'pending_human' });
   });
 });

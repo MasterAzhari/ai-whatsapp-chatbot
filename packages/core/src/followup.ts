@@ -3,7 +3,7 @@ import { withSystem, withTenant } from './db.js';
 import type { ChatTurn, GenerateReplyResult } from './ai/provider.js';
 import { enqueueReply, splitBubbles } from './outbox.js';
 import { loadSettings, replyDelayMs, type BotSettings } from './repos/settings.js';
-import { AI_GUARDRAILS, leadActive, type RouterDeps } from './routing/router.js';
+import { AI_GUARDRAILS, extractHandover, leadActive, type RouterDeps } from './routing/router.js';
 
 /**
  * Auto follow-up. When a customer goes quiet after the bot's last message, the bot
@@ -153,7 +153,7 @@ async function sendOne(db: Db, due: Due, deps: RouterDeps): Promise<'sent' | 'sk
     const again = (await findDue(tx, due.conversationId))[0];
     if (!again || again.lastMessageId !== due.lastMessageId) return 'skipped';
     // One bubble: each follow-up message counts towards the limit of three.
-    const text = result?.ok ? splitBubbles(result.text).join('\n\n') : '';
+    const text = result?.ok ? splitBubbles(extractHandover(result.text).text).join('\n\n') : '';
     if (text.replace(/[^A-Z]/g, '') === SKIP) {
       await tx.query('UPDATE conversations SET followup_stopped_at = now() WHERE id = $1', [due.conversationId]);
       return 'stopped';

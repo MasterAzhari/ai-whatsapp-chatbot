@@ -3,11 +3,13 @@ import { inTenant, requireRole, type TenantContext } from '../auth.js';
 import type { AIProvider, GenerateReplyResult } from '../ai/provider.js';
 import { loadRules } from '../repos/keywords.js';
 import { loadSettings } from '../repos/settings.js';
-import { AI_GUARDRAILS, decide, type Route } from './router.js';
+import { AI_GUARDRAILS, decide, extractHandover, type Route } from './router.js';
 
 export interface PlaygroundResult {
   route: Route;
   ai?: GenerateReplyResult;
+  /** The AI asked to hand the chat to staff (its reason), as the live bot would. */
+  aiHandover?: string;
 }
 
 /**
@@ -66,5 +68,7 @@ export async function simulate(
       ],
     ),
   );
-  return { route, ai };
+  if (!ai.ok) return { route, ai };
+  const h = extractHandover(ai.text);
+  return { route, ai: { ...ai, text: h.text }, ...(h.handover ? { aiHandover: h.reason ?? 'perlu staf' } : {}) };
 }
