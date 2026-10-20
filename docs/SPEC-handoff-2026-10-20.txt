@@ -1,0 +1,646 @@
+HANDOFF CODEX UNTUK PEMBANGUNAN SISTEM AI WHATSAPP CHATBOT
+Pemilik: Master Azhari
+Disediakan: 20 Oktober 2026, Asia/Kuala_Lumpur
+Versi: 1.0
+Status: Spesifikasi pembangunan; aplikasi belum dibina atau dipasang melalui handoff ini.
+
+TUJUAN
+
+Bina platform WhatsApp AI chatbot milik Master Azhari untuk kegunaan sendiri, bermula dengan jualan KHIND/Fairuz, dan direka supaya boleh dijual kepada pelanggan lain. Master mahu mengurus bot melalui website dan memberi arahan kepada Malik melalui MCP, termasuk menetapkan knowledge, keyword dan flow tanpa berulang kali menyalin konfigurasi secara manual.
+
+Fail ini menghimpunkan keputusan perbincangan yang tersedia, konteks operasi Fairuz, serta cadangan teknikal untuk menjadikannya boleh dibangunkan. Ia bukan transkrip verbatim atau eksport konfigurasi live Reply.la.
+
+Cara membaca:
+- DISAHKAN: arahan atau pilihan Master dalam perbincangan.
+- CADANGAN PELAKSANAAN: perincian yang dicadangkan untuk Codex; bukan keputusan lama yang kononnya telah dipersetujui.
+- BELUM DITETAPKAN: jangan reka nilainya; gunakan konfigurasi atau placeholder.
+- KONTEKS FAIRUZ: peraturan bot sedia ada untuk dijadikan preset, perlu disemak sebelum migrasi live.
+
+Keputusan terkini mengatasi arahan terdahulu. Contohnya, pilihan awal QR sahaja telah diperluas oleh Master kepada pilihan rasmi ATAU QR. Jangan bina sistem yang terkunci pada satu pilihan sahaja.
+
+
+1. ARAHAN PERMULAAN UNTUK CODEX
+
+Anda ialah lead developer untuk membina platform AI WhatsApp chatbot Master Azhari berdasarkan handoff ini.
+
+Baca keseluruhan fail, periksa repository dan AGENTS.md jika ada, kemudian teruskan pembangunan secara berfasa. Mulakan dengan asas aplikasi yang boleh dijalankan, bukan sekadar mockup atau proposal. Kekalkan keputusan yang disahkan, rekod pilihan teknikal tambahan sebagai assumption/decision, dan jangan campurkan projek ini dengan Biruni POS, WooCommerce atau MyAduan.
+
+Sasaran asas: satu VPS Hostinger dengan Ubuntu, Docker Compose, tiga container utama, tanpa n8n. Sistem mempunyai website/admin/inbox, gateway WhatsApp dan PostgreSQL. Backend memanggil Gemini API secara terus. Keyword/fixed replies dan flow deterministik diproses sebelum AI.
+
+Sediakan dua adapter WhatsApp: rasmi dan QR tidak rasmi. Masukkan MCP dalam skop awal, serta modul Meta/Facebook Ads dalam roadmap pembangunan projek ini. Reka asas supaya boleh dijual semula; jangan hardcode Fairuz, KHIND, nombor telefon, model AI atau rahsia.
+
+Jika credential belum tersedia, teruskan pembangunan menggunakan adapter mock dan data sintetik yang dilabel jelas. Siapkan integration code, ujian dan panduan setup. Bezakan fungsi yang sudah diuji secara live daripada fungsi yang hanya diuji dengan mock.
+
+Jangan menghubungi pelanggan sebenar, memindahkan nombor live, mengaktifkan follow-up atau membelanjakan bajet iklan semata-mata untuk menguji. Gunakan nombor ujian dan akaun/aset ujian yang ditentukan pemilik. Keizinan membina aplikasi tidak secara automatik mengaktifkan operasi produksi.
+
+Hasil akhir perlu merangkumi source code, migrations, Docker configuration, contoh environment tanpa rahsia, dokumentasi setup/MCP, ujian aliran kritikal, status integrasi dan deployment runbook.
+
+
+2. KEPUTUSAN MASTER YANG DISAHKAN
+
+2.1 Tujuan dan operasi
+- Mahu membina chatbot WhatsApp sendiri untuk pelanggan, bermula dengan KHIND.
+- Mahu website untuk inbox, admin dan pengurusan bot.
+- Mahu kawalan AI ON/OFF dan human takeover.
+- Mahu knowledge produk, harga, promosi, sejarah pelanggan dan follow-up yang boleh dikawal.
+- Mahu sistem yang boleh dijual; reka bentuk tidak boleh menjadi skrip khusus satu nombor atau satu bisnes sahaja.
+
+2.2 Infrastruktur dan AI
+- Hostinger VPS ialah arah hosting.
+- KVM 1 Ubuntu disebut sebagai pilihan awal. Pembelian, kapasiti sebenar dan akses VPS belum diperiksa dalam handoff ini.
+- Satu VPS dengan Docker/container.
+- Arah terkini ialah backend terus ke Gemini API tanpa n8n.
+- Tiga container utama: website+backend, gateway WhatsApp, PostgreSQL.
+- API key diperoleh melalui Google AI Studio; model, prompt dan tetapan yang digunakan aplikasi mesti diurus melalui aplikasi.
+- Jangan jadikan perubahan pilihan model dalam playground AI Studio sebagai mekanisme konfigurasi aplikasi.
+
+2.3 Penjimatan token
+Arahan Master: "Aku nak ada features keyword juga untuk kurangkan kebetgantungab pada AI untuk Whatsapp yg simple."
+- Jawapan mudah perlu diproses dengan keyword/rules/fixed replies dahulu.
+- Gemini digunakan apabila tiada jawapan deterministik yang sesuai.
+- Website perlu menyediakan tetapan keyword, AI/model/API key, knowledge, follow-up, inbox dan penggunaan token/kos.
+
+2.4 Pilihan sambungan WhatsApp
+Arahan terbaru Master: "Sebelum lupa aku nak ada pilihan APi samada official atau tak official pakai QR tu."
+- Sokong pilihan API rasmi dan QR tidak rasmi.
+- Keutamaan asal QR kerana kos tidak menggugurkan keperluan rasmi.
+- Master menggunakan WhatsApp Business dan pernah bertanya tentang nombor sedia ada serta coexistence. Kebolehlaksanaan onboarding untuk nombor sebenar masih perlu disahkan; jangan jamin nombor itu terus layak.
+
+2.5 MCP dan arahan melalui Malik
+Arahan Master:
+- "Nanti hang boleh access kan web ni untuk set bot semua ..guna MCP ke untuk rangka flow semua"
+- "MCP hang buat ya sebab aku nak bagi arahan kat hang ja"
+- Master turut bertanya sama ada perubahan coding, seperti contoh MyAduan, boleh dibuat melalui MCP supaya tidak perlu copy-paste.
+- Keperluannya ialah pengurusan melalui arahan. MCP mesti memberi akses sebenar kepada fungsi yang dibina, bukan hanya endpoint kesihatan kosong.
+- Keupayaan mengubah kod memerlukan integrasi pembangunan/deployment; MCP semata-mata tidak menjadikan semua kod boleh diedit secara automatik.
+
+2.6 Facebook Ads dan jualan sistem
+Arahan Master:
+- "Kalau web tu buat sekali untuk hang access Dan control FB ads ok ?"
+- "Dan aku nak buat web atau system ni aku boleh jual."
+- Masukkan modul Meta Ads yang boleh dikembangkan untuk bacaan dan kawalan.
+- Pecahan fungsi Ads, pelan langganan, harga jualan, billing dan model multi-tenant belum dimuktamadkan.
+
+
+3. CADANGAN SENI BINA
+
+Cadangan stack:
+- TypeScript, Node.js dan Next.js untuk website serta service aplikasi.
+- PostgreSQL untuk data aplikasi, mesej, flow state, audit dan durable jobs.
+- Gateway QR berasingan; Baileys ialah calon untuk dinilai, bukan library yang telah ditetapkan oleh Master.
+- Adapter rasmi menggunakan WhatsApp Business Platform/Cloud API.
+- MCP menggunakan SDK yang diselenggara dan transport yang serasi dengan client sasaran.
+- Versi runtime, SDK, API dan library dipilih selepas menyemak dokumentasi semasa, kemudian dipin dalam lockfile/release.
+
+Tiga container utama:
+
+A. app
+   UI, authentication, backend API, conversation engine, Gemini adapter, official WhatsApp adapter, MCP endpoint, scheduler/job worker dan modul Ads.
+   Jika worker berasingan proses tetapi berada dalam container ini, gunakan process supervision dan graceful shutdown. Jangan jalankan scheduler sebagai timer dalam request handler.
+
+B. whatsapp-gateway
+   Menjaga sesi QR, menerima dan menghantar event WhatsApp serta menyampaikan event yang dinormalisasi kepada app.
+   Persistent session storage diperlukan. Session dikunci kepada channel/tenant berkenaan.
+
+C. postgres
+   Database dengan persistent volume, migration dan backup.
+
+TLS/reverse proxy boleh dijalankan pada host supaya tiga container utama kekal. Jika perlu container tambahan untuk proxy atau scaling, dokumentasikan sebab dan kesannya; jangan menambah Redis/n8n/vector database tanpa keperluan nyata.
+
+Gunakan durable PostgreSQL jobs/outbox untuk MVP supaya follow-up dan penghantaran tidak hilang selepas restart. PostgreSQL full-text search boleh menjadi carian knowledge awal. Embedding/vector search ialah pengembangan jika ujian retrieval membuktikan ia perlu.
+
+Gateway dan database tidak didedahkan terus ke internet. UI, webhook provider dan MCP melalui endpoint HTTPS yang sesuai. Komunikasi dalaman perlu authentication, walaupun berada dalam Docker network.
+
+KVM 1 ialah titik mula, bukan janji kapasiti ramai pelanggan. Ukur RAM, CPU, session count dan queue latency; dokumentasikan had sebenar sebelum menjual pakej.
+
+
+4. MODUL WEBSITE
+
+4.1 Dashboard
+- Bilangan conversation baru, aktif, pending human dan selesai.
+- Bilangan jawapan melalui keyword, flow, AI dan manusia.
+- Token, anggaran kos, error dan status sambungan.
+- Filter tarikh, tenant dan nombor/channel.
+- Bezakan mesej accepted/sent/delivered/read/failed mengikut status sebenar provider.
+
+4.2 Connections
+- Tambah channel dan pilih official atau QR.
+- Paparkan status, nombor yang disahkan, last connected dan sebab disconnected.
+- QR pairing/reconnect/logout mengikut hak akses.
+- Konfigurasi official serta webhook connection test.
+- Nombor sebenar tidak dipilih secara automatik daripada sejarah chat; Master mempunyai beberapa nombor untuk kegunaan berbeza.
+
+4.3 Inbox
+- Senarai conversation, carian pelanggan, filter label/status/assignee.
+- Paparan sejarah dan asal setiap mesej: customer, keyword, flow, AI atau human.
+- Balas manual, internal notes, label, assignment dan human takeover.
+- Terima teks serta attachment asas seperti imej/dokumen.
+- Audio/video boleh dipaparkan sebagai attachment dahulu; transkripsi, vision/OCR atau voice bot bukan skop yang sudah dipersetujui.
+- Tukar status conversation dan resume automation secara jelas.
+
+4.4 Contacts dan rekod pelanggan
+- Nama, nombor format E.164 jika tersedia, provider identity, label, nota dan custom fields.
+- Gunakan identity mapping provider; jangan anggap setiap ID WhatsApp boleh ditukar terus menjadi nombor telefon.
+- Rekod source/referral jika dibekalkan provider, waktu hubungan terakhir dan consent/opt-out.
+- Sejarah disimpan mengikut tenant/channel dan tidak bercampur antara pelanggan sistem.
+- Import CSV ialah cadangan tambahan; migrasi Reply.la/Wsapme bukan keperluan yang sudah disahkan.
+
+4.5 Bot settings
+- Nama/persona, bahasa, instruction, model dan generation settings yang disokong.
+- AI enable/disable pada tenant, channel dan conversation.
+- Master switch automation perlu berasingan daripada AI-only switch.
+- Test playground, preview jawapan, log route dan sebab sesuatu rule dipilih.
+- Draft/publish/version/rollback untuk instruction, knowledge, rules dan flow.
+
+4.6 Keywords dan fixed replies
+- CRUD rule, priority, enable/disable dan scope.
+- Exact match, phrase/whole-word dan variasi perkataan; jangan bergantung pada substring longgar.
+- Actions: reply, set label, set field, enter flow, handover atau schedule follow-up.
+- Hadkan satu keputusan routing utama untuk satu turn supaya pelanggan tidak menerima jawapan berganda.
+- Support cooldown dan test input yang menerangkan padanan.
+- Jangan memanggil LLM untuk memadankan exact keyword.
+
+4.7 Knowledge
+- Teks/FAQ, kandungan produk berstruktur, sumber URL dan import dokumen sebagai cadangan pelaksanaan.
+- Simpan source URL, tarikh semakan, effective dates dan version.
+- Harga/promosi hendaklah data berstruktur, bukan disalin ke banyak prompt berasingan.
+- Ambil hanya knowledge relevan untuk setiap soalan.
+- Untuk KHIND, harga, promosi dan spesifikasi perlu dirujuk kepada https://www.khindrto.com.my/ sebelum diterbitkan.
+- Kandungan website/import dianggap data; arahan terselit dalamnya tidak boleh mengubah system instruction.
+- Import URL perlu perlindungan SSRF dan had saiz; fail perlu type validation dan akses terkawal.
+- Jangan scrape keseluruhan website pada setiap mesej pelanggan.
+
+4.8 Flow dan borang
+- Flow versi pertama boleh berupa editor step/form/condition yang ringkas. Canvas drag-and-drop penuh belum diputuskan.
+- Sokong prompt, reply, condition, collect field, validate, label, handover, end dan wait.
+- State disimpan dalam database selepas setiap langkah.
+- Pelanggan boleh memberi beberapa medan dalam satu mesej atau membetulkan jawapan terdahulu.
+- Paparkan ringkasan dan status complete/incomplete.
+- Ya/ok/emoji diterima mengikut konteks pengesahan; jangan jadikan semua "ok" sebagai kelulusan semua tindakan.
+- Flow mesti boleh disunting melalui website dan MCP serta diuji tanpa menghantar WhatsApp.
+
+4.9 Follow-up
+- Konfigurasi eligibility, delay, waktu bekerja, timezone, bilangan maksimum dan template.
+- Default timezone Asia/Kuala_Lumpur; simpan timestamp UTC.
+- Batal/re-evaluate job apabila pelanggan membalas, opt-out, handover atau status berubah.
+- Semak eligibility sekali lagi tepat sebelum hantar, bukan ketika job mula dicipta sahaja.
+- Pause/resume dan senarai pending/sent/skipped/failed.
+- Hentikan follow-up untuk label Rejected dalam preset Fairuz.
+- Global messaging opt-out menyekat outreach; Rejected ialah status sales yang berasingan.
+- Jadual sebenar tidak diaktifkan dengan nilai rekaan.
+
+4.10 Usage dan kos
+- Token input/output dan penggunaan lain yang provider laporkan.
+- Rekod model, version pricing, currency, tarikh kadar dan conversion rate jika menukar ke RM.
+- Rate card mesti boleh dikemas kini; jangan hardcode anggaran sebagai bil rasmi.
+- Bezakan anggaran AI, caj WhatsApp rasmi, hosting/storage dan ad spend.
+- Nyatakan unavailable jika provider tidak membekalkan usage sebenar.
+- Soft/hard limits dan alert ialah cadangan pelaksanaan; kuota dan harga pakej belum diputuskan.
+- Fixed reply deterministik tidak menggunakan token generatif; retrieval berbayar/embedding, jika ditambah, direkod berasingan.
+
+
+5. ALIRAN PEMPROSESAN MESEJ
+
+Urutan cadangan:
+
+1. Terima webhook/event dan sahkan sumber.
+2. Kenal pasti tenant, channel, customer identity dan jenis event.
+3. Deduplicate event/message; jangan anggap semua webhook ialah mesej baru.
+4. Simpan inbound secara durable sebelum acknowledge mengikut kontrak provider.
+5. Ignore status-only events, mesej sendiri, history replay dan group yang tidak disokong.
+6. Semak automation switch, human takeover, opt-out dan status connection.
+7. Proses permintaan stop/human terlebih dahulu.
+8. Jika ada active flow, tafsir jawapan dalam konteks step itu.
+9. Jika sesuai, jalankan keyword/fixed rules dengan priority.
+10. Jika tiada padanan, AI hanya jika AI enabled, kuota mencukupi dan knowledge relevan tersedia.
+11. Validate output/tindakan, recheck handover dan message eligibility.
+12. Letak balasan dalam durable outbox; hantar melalui adapter channel aktif.
+13. Simpan provider message ID, route, usage dan status; proses delivery updates berasingan.
+14. Jadual/re-evaluate follow-up berdasarkan state terkini.
+
+Definisi switch yang dicadangkan:
+- Automation OFF: semua auto replies dan follow-up dihentikan.
+- AI OFF: keyword dan flow deterministik masih boleh berjalan; tiada panggilan Gemini.
+- Human takeover: semua balasan automatik untuk conversation itu dipause.
+- Resume bot: tindakan eksplisit atau polisi resume yang jelas.
+
+Perlindungan perlumbaan:
+- Serialize kerja bagi conversation yang sama.
+- Jika manusia mengambil alih ketika AI sedang menjana, discard/cancel output sebelum ia dihantar.
+- Jika provider timeout selepas menerima mesej, status penghantaran boleh menjadi unknown. Jangan retry membuta tuli dan mendakwa exactly-once jika provider tidak menyokongnya.
+- Gunakan idempotency key, outbox lease, retry backoff dan reconciliation setakat capability provider.
+- Jangan terus menghantar semula backlog lama apabila reconnect tanpa semakan expiry dan eligibility.
+
+
+6. PILIHAN WHATSAPP
+
+6.1 QR tidak rasmi
+- Gateway sendiri melalui WhatsApp Web/linked-device style connection.
+- Pairing hanya oleh pemilik yang dibenarkan; QR/session token adalah rahsia.
+- Persistent auth/session, reconnect dengan backoff, disconnect reason dan manual logout.
+- Gateway mesti mempunyai interface stabil supaya library boleh ditukar.
+- Mode QR tidak rasmi bukan Meta Cloud API dan tidak boleh dipasarkan sebagai sambungan rasmi atau bebas risiko sekatan.
+- Tiada janji anti-ban. Bina untuk komunikasi pelanggan yang dibenarkan, bukan unsolicited blast.
+- Sahkan lesen, versi dan keserasian library sebelum menggunakan atau menjual sistem.
+
+6.2 Official
+- Implement konfigurasi sebenar untuk account/channel dan credential yang diperlukan oleh onboarding Meta semasa.
+- Validasi webhook challenge dan signature, serta event messages/statuses.
+- Approved template support dan peraturan service window.
+- Berdasarkan polisi yang disemak, free-form replies berada dalam 24 jam sejak mesej user terakhir; di luar window gunakan approved templates.
+- Simpan metadata yang diperlukan untuk menentukan send eligibility; paparkan sebab jika send disekat.
+- Kadar caj dan kategori perlu dirujuk kepada kadar semasa. Jangan guna andaian lama "setiap mesej sama harga".
+- Coexistence ialah laluan onboarding yang perlu diperiksa pada akaun/nombor sebenar; jangan membina andaian bahawa semua nombor WhatsApp Business automatik layak.
+
+6.3 Adapter contract yang dicadangkan
+- getStatus
+- connect / disconnect jika disokong
+- sendText
+- sendMedia
+- sendTemplate jika disokong
+- normalizeInboundEvent
+- normalizeDeliveryStatus
+- getCapabilities
+
+Jangan paksa capability yang tidak tersedia pada satu provider. UI perlu menerangkan perbezaan tersebut.
+
+Satu channel mempunyai satu adapter penghantaran aktif. Menukar official/QR ialah proses reconnection/migration yang dinilai, bukan toggle yang menjanjikan nombor sama aktif dalam dua gateway serentak. Sejarah aplikasi dikekalkan; sejarah telefon tidak dijamin boleh diimport sepenuhnya.
+
+
+7. GEMINI DAN AI PROVIDER
+
+DISAHKAN: Gemini sebagai permulaan, dipanggil terus oleh backend.
+
+Cadangan pelaksanaan:
+- Interface AIProvider dengan generateReply dan penggunaan/schema yang konsisten.
+- Pilihan menambah OpenAI/provider lain kemudian tanpa menukar inbox dan database. Provider tambahan belum wajib dibina sepenuhnya dalam MVP.
+- Model ID, prompt, parameters, token limits dan API credential milik konfigurasi aplikasi.
+- Google AI Studio digunakan untuk mendapatkan/mengurus key; tidak perlu menyalin setiap pertukaran model secara manual ke kod.
+- Validate model dan parameters yang tersedia kepada account; senarai model tidak boleh bergantung pada nama model yang dikarang.
+- API key server-side; tidak pernah dihantar ke browser bundle, customer response atau MCP tool output.
+- Credentials yang diurus melalui UI dienkripsi; master encryption key disimpan di luar database dan backup database.
+- Context terhad kepada mesej terbaru, ringkasan yang diperlukan, state dan knowledge relevan.
+- AI tidak dibenarkan mereka harga atau meluluskan permohonan pelanggan.
+- Timeout/error/quota exhausted menggunakan fixed fallback atau human handover.
+- Jangan membuat fallback senyap kepada model lebih mahal tanpa konfigurasi yang diluluskan.
+- Test playground tunjuk route, knowledge version, model, latency, usage dan output; gunakan data sintetik.
+
+
+8. MCP UNTUK MALIK
+
+MCP ialah skop teras, bukan item pilihan yang ditinggalkan selepas UI siap.
+
+Cadangan endpoint:
+- HTTPS /mcp menggunakan Streamable HTTP yang serasi dengan SDK dan client sasaran.
+- Authentication/authorization sebenar, scoped access, tenant binding dan audit.
+- Gunakan mekanisme OAuth yang serasi dengan client sasaran untuk remote MCP. Jangan anggap URL sahaja atau custom header tanpa sokongan client mencukupi.
+- Pin protocol/SDK yang serasi; uji connection dengan client yang akan digunakan, bukan sekadar curl endpoint.
+- Sambungan client dan akses account masih perlu disediakan ketika integrasi sebenar.
+
+Set tool dicadangkan; nama boleh disesuaikan tetapi keupayaannya mesti nyata:
+
+Bacaan:
+- list_workspaces
+- get_channel_status
+- list_conversations / get_conversation
+- get_contact
+- get_bot_settings
+- list_keyword_rules
+- get_flow
+- search_knowledge
+- get_usage_summary
+- get_followup_status
+
+Tetapan dan operasi:
+- update_bot_settings
+- create_keyword_rule / update_keyword_rule / disable_keyword_rule
+- upsert_knowledge_draft
+- update_flow_draft / validate_flow / publish_flow
+- simulate_conversation
+- set_ai_enabled
+- set_contact_labels
+- handover_conversation / resume_conversation
+- update_followup_rule / cancel_followup
+- send_message untuk penerima dan kandungan yang memang telah diizinkan
+
+Cadangan kontrak tool:
+- JSON schema ketat, validation dan error yang boleh diambil tindakan.
+- expected_version untuk mengelakkan edit menimpa perubahan terbaru.
+- Tenant context datang daripada identiti yang disahkan; input tenant_id sahaja bukan authorization.
+- Read dan write scopes berasingan; panggil service layer sama seperti UI.
+- Return perubahan/status yang telah disahkan, bukan "berjaya" sebelum provider selesai.
+- Jangan return API secret, QR auth blob atau maklumat pelanggan yang tidak diperlukan.
+- Arahan customer atau kandungan knowledge tidak boleh memberi kuasa kepada customer untuk memanggil admin MCP.
+- Customer-facing Gemini engine tidak mendapat MCP admin capabilities.
+
+Contoh arahan yang hendak disokong:
+- "Malik, tambah keyword lokasi dan guna jawapan ini."
+- "Tukar model AI tenant ini kepada model yang aku pilih."
+- "Update flow supaya pelanggan boleh isi tiga medan sekali."
+- "Pause bot untuk conversation ini."
+- "Berapa token Fairuz guna minggu ini?"
+- "Hentikan follow-up untuk contact berlabel Rejected."
+
+Kawalan coding:
+- Bezakan configuration changes yang boleh berlaku terus melalui service tools dengan perubahan source code.
+- Perubahan code memerlukan repository, branch/patch, ujian/build, release artifact dan deployment/rollback.
+- Cadangan sambungan masa depan: request_code_change, get_build_status dan deploy_release yang mengendalikan workflow tersebut.
+- Jangan sediakan arbitrary shell, arbitrary SQL atau tulis fail bebas sebagai MCP admin lalai.
+- Jangan mendakwa code-change pipeline sudah siap jika hanya tool config tersedia.
+- Matlamat Master ialah beri arahan tanpa copy-paste; pipeline berasingan boleh memenuhi matlamat itu apabila dibina dan disambungkan.
+
+
+9. MODUL META ATAU FACEBOOK ADS
+
+DISAHKAN: Master mahu website ini membolehkan Malik access dan control FB Ads.
+
+Cadangan pecahan pelaksanaan:
+- Connect account melalui authorization provider dan simpan credentials secara selamat.
+- Pilih ad account yang benar-benar diberi akses.
+- Baca campaign/ad set/ad serta performance yang tersedia.
+- Cadangan metrics: spend, impressions, clicks, results, cost per result; takrif result dan attribution window mesti jelas.
+- Kawalan awal: pause/resume, perubahan budget dan draft campaign/ad.
+- Penerbitan dan perubahan yang meningkatkan perbelanjaan memerlukan arahan pemilik yang jelas atau polisi delegasi yang sudah ditetapkan.
+- Sediakan preview objek, account, perubahan dan kesan budget sebelum write yang berkaitan.
+- Catat actor, before/after, waktu, request/result dan error.
+- Tools MCP Ads perlu scopes berasingan daripada bot.
+- Simpan referral/Click-to-WhatsApp metadata jika disediakan provider; jangan menganggap semua contact boleh dipadankan dengan campaign.
+- Jangan guna credential WhatsApp sebagai bukti bahawa akses Ads telah diberikan.
+
+Marketing API, permission/app review, supported mutations dan account assets perlu disahkan semasa implementasi. Jangan paparkan butang yang mengaku live jika adapter masih mock.
+
+Cadangan urutan: siapkan chatbot dan MCP dahulu, kemudian Ads read, diikuti Ads write. Modul Ads kekal sebahagian daripada skop keseluruhan.
+
+
+10. ASAS SISTEM YANG BOLEH DIJUAL
+
+DISAHKAN: mahu menjual web/sistem.
+BELUM DITETAPKAN: SaaS bersama, deployment seorang pelanggan satu instance, white-label, pakej, subscription dan harga.
+
+Cadangan default untuk memulakan coding:
+- Codebase umum dengan tenant/workspace boundary dari awal.
+- Mulakan satu tenant KHIND untuk Master serta tenant ujian kedua untuk mengesahkan isolation.
+- Setiap tenant mempunyai channels, contacts, bot settings, credentials, rules, knowledge, flow dan usage tersendiri.
+- Business branding dan bahasa configurable; nama produk belum diputuskan.
+- Jangan menjadikan "AutoReply" atau nama projek lain sebagai nama produk muktamad tanpa arahan.
+- Boleh deploy instance berasingan dengan konfigurasi sama jika model jualan kemudian memilih dedicated installation.
+- Had tenant/channel/user/usage boleh diwakili dalam data, tetapi plan values dan payment gateway jangan direka.
+
+Cadangan roles:
+- Platform Owner: mengurus tenant dan sistem.
+- Workspace Admin: mengurus bisnes, channel, bot dan ahli workspace sendiri.
+- Operator: inbox, contact yang dibenarkan dan human takeover.
+- Integration Identity: MCP/API scopes yang ditetapkan.
+
+Tenant isolation mesti meliputi database queries, cache, search index, jobs, files, credentials dan MCP. Bukan sekadar menapis senarai pada UI.
+
+Billing automatik, reseller hierarchy, affiliate, white-label custom domain dan marketplace bukan keperluan yang telah dipersetujui; sediakan extension points tanpa membesarkan MVP secara automatik.
+
+
+11. CADANGAN MODEL DATA
+
+Entity minimum:
+- tenants
+- users dan tenant_memberships
+- channels dan credential_references
+- contacts dan provider_identity_mappings
+- conversations dan conversation_assignments
+- messages dan delivery_events
+- contact_labels dan contact_label_assignments
+- bot_settings_versions
+- keyword_rules
+- knowledge_sources dan knowledge_versions
+- flows, flow_versions dan conversation_flow_state
+- forms, form_fields dan form_submissions jika preset borang digunakan
+- followup_rules dan scheduled_jobs
+- outbound_messages/outbox
+- ai_usage_events dan pricing_rates
+- audit_events
+- integration_connections
+- ads_accounts dan ads_action_logs apabila modul Ads dibina
+
+Cadangan prinsip:
+- Semua data milik bisnes mempunyai tenant scope.
+- Unique constraints untuk provider message IDs turut mengambil kira provider/channel yang berkenaan.
+- E.164 tidak menggantikan provider-specific identity mapping.
+- Simpan UTC, paparkan timezone tenant.
+- Data sensitif dan credential perlu encryption serta akses minimum.
+- Raw webhook logs, jika perlu untuk debugging, mempunyai retention ringkas dan redaction.
+- Fail media dalam private persistent storage; URL sementara, had saiz dan retention. Jangan letak dokumen customer dalam public web directory.
+- Audit merangkumi perubahan melalui website dan MCP.
+- Gunakan migrations; jangan mengubah schema production secara manual tanpa rekod.
+
+
+12. PRESET FAIRUZ DAN KONTEKS KHIND
+
+Bahagian ini ialah konteks operasi lama. Ia bukan konfigurasi live Reply.la yang telah dieksport pada 20 Oktober. Jadikan preset editable dan semak dengan konfigurasi semasa sebelum cutover.
+
+12.1 Personaliti dan jualan
+- Nama chatbot Fairuz.
+- Sapaan "Cik"; tidak perlu memasukkan nama contact.
+- BM ringkas, mesra, tidak pushy.
+- Jawapan pendek, fixed replies jika sesuai, elakkan pengulangan dan tidak wajib mengakhiri setiap balasan dengan soalan.
+- Fokus RTO untuk kegunaan Master.
+- Untuk aircond, fokus Acson; tidak membanding harga dengan jenama lain.
+- Jangan hardcode mana-mana harga/promo lama sebagai harga semasa.
+
+12.2 Flow yang pernah ditetapkan
+- Step 3: Semak Kawasan Pemasangan.
+- Step 4: Kenal Pasti Single atau Combo.
+- Human takeover intent: KHIND Application Ready for Review.
+- Trigger apabila borang lengkap, walaupun dokumen belum diberi.
+- Penerimaan "ya", "ok", 👍 dan 👌 sebagai jawapan persetujuan yang relevan.
+- Kes yang perlu diuji: pelanggan memberi beberapa input dan flow tidak berhenti selepas tiga input.
+- Follow-up intents: Status Pekerjaan, Kawasan Pemasangan dan Buat Semakan.
+- Label Rejected menghentikan follow-up. Polisi lama "kenapa mahal" dilabel Rejected perlu kekal sebagai pilihan preset yang editable, bukan peraturan semua tenant.
+
+12.3 Maklumat borang yang pernah diperlukan
+- Nama penuh ikut IC.
+- No IC.
+- Email.
+- No WhatsApp.
+- Alamat pemasangan.
+- Alamat surat-menyurat.
+- Pekerjaan: kerajaan/swasta/bekerja sendiri/freelance/pencen/student.
+- Jika bekerja: nama syarikat/kementerian.
+- Tarikh mula bekerja: bulan dan tahun.
+- Jika kerajaan: email tempat kerja.
+- Waris: nama, hubungan dan nombor telefon.
+
+Cadangan penyesuaian pelaksanaan:
+- Maklumat pengenalan sensitif seperti IC dan dokumen sokongan dikumpul melalui borang web HTTPS berakses terkawal; WhatsApp membawa pelanggan ke borang.
+- Polisi WhatsApp semasa melarang meminta nombor pengenalan sensitif penuh dalam chat. Oleh itu jangan menyalin tingkah laku lama paparan IC penuh ke WhatsApp.
+- Akses IC penuh dalam admin hanya kepada role yang memerlukannya dan diaudit; log biasa serta prompt AI tidak perlu mengandungi IC penuh.
+- Status form lengkap perlu berasingan daripada documents_complete supaya human takeover tetap berlaku pada masa yang betul.
+- Jika secure web form belum dibina, serahkan proses sensitif kepada operator; jangan menganggap raw WhatsApp chat sebagai pengganti.
+
+12.4 Dokumen dan terma lama untuk disahkan semula
+- Kerajaan: IC depan/belakang dan slip gaji tiga bulan untuk order pertama.
+- Bukan kerajaan: semakan awal IC depan/belakang; penyata bank tiga bulan mungkin diminta kemudian; slip gaji tidak wajib dalam polisi lama.
+- Coverage, caj pemasangan tambahan, syarat online banking, RM2 awal, jadual auto debit dan early settlement ialah knowledge perniagaan yang berubah dan perlu disahkan sebelum publishing.
+- Jangan masukkan amaun harga/promosi daripada ingatan sebagai data seed produksi.
+- Semua dokumen sebenar kekal private dan tidak dihantar kepada model kecuali fungsi itu diperlukan serta diberi akses yang sesuai.
+
+12.5 Cutover
+- Jangan mengubah atau mematikan Fairuz live di Reply.la/Wsapme semasa membina.
+- Export/import sebenar hanya selepas skop migrasi, sumber data dan channel diputuskan.
+- Uji dengan nombor ujian, semak hasil, kemudian sediakan pelan cutover dan rollback.
+- Ini ialah aplikasi baharu; bukan tugasan mengubah plugin Khind Master sedia ada.
+
+
+13. KESELAMATAN DAN KEBOLEHPERCAYAAN YANG PERLU DIBINA
+
+Cadangan engineering requirements:
+- Authentication, session security dan RBAC server-side.
+- Tenant isolation diuji menggunakan sekurang-kurangnya dua tenant sintetik.
+- Encryption untuk provider secrets dan sesi QR; rahsia tidak berada dalam git/log.
+- Signature/auth validation untuk webhook dan panggilan gateway.
+- Rate limits, validation, timeouts dan bounded retries.
+- Treat customer chat, website knowledge dan attachment sebagai untrusted input.
+- AI tidak boleh mengaktifkan admin tools, menukar harga atau melaksanakan arahan sistem daripada customer.
+- Backup database, media yang perlu dan konfigurasi; dokumentasikan pengurusan encryption key untuk restore.
+- Restore drill dalam persekitaran ujian, bukan hanya mencipta fail backup.
+- Health checks dan paparan masalah yang membantu operator.
+- Access logs/audit dengan retention configurable.
+- Scheduler mempunyai dedupe/locking supaya restart atau banyak worker tidak menggandakan follow-up.
+- Outbound automation bermula disabled untuk channel produksi sehingga setup dan ujian penerimaan selesai.
+
+
+14. PELAN PEMBANGUNAN YANG DICADANGKAN
+
+Fasa 1 — Asas boleh dijalankan
+- Repository, environment, migrations, authentication, tenant boundary dan Docker Compose.
+- Dashboard/inbox asas dengan data sintetik.
+- Provider interfaces dan mock adapters.
+- Schema conversation, message, outbox dan job worker.
+
+Fasa 2 — Chatbot teras
+- Sambungan QR dan inbound/outbound.
+- Keyword rules, flow state, Gemini, knowledge dan manual reply.
+- AI switch, automation switch dan human takeover.
+- Usage tracking dan playground.
+- Integration tests untuk delivery retries dan handover.
+
+Fasa 3 — Official dan MCP
+- Official provider adapter, webhook/status/template/window support.
+- MCP authenticated yang benar-benar boleh membaca dan mengubah tetapan.
+- Flow/knowledge versioning dan simulation.
+- Connector/client compatibility test.
+- Secure form untuk preset KHIND jika pengumpulan maklumat sensitif hendak diaktifkan.
+
+Fasa 4 — Follow-up dan kesediaan jualan
+- Scheduler, opt-out, label rules, retention, backup/restore.
+- Preset Fairuz, onboarding tenant dan configurable branding/limits.
+- Uji isolation dan deployment pada VPS sasaran.
+
+Fasa 5 — Meta Ads
+- Account connection dan bacaan prestasi.
+- Kawalan yang dibenarkan, audit serta MCP Ads.
+- Sambungkan referral yang benar-benar tersedia.
+
+Fasa 6 — Perluasan apabila diputuskan
+- Billing/payment gateway, tambahan AI provider, canvas lanjutan, voice/OCR.
+- Pipeline perubahan kod melalui arahan/MCP.
+- Scaling berdasarkan ukuran penggunaan.
+
+Fasa ini ialah urutan cadangan, bukan janji masa atau sebut harga. Jangan mendakwa keseluruhan projek selesai apabila hanya Fasa 1 siap.
+
+
+15. KRITERIA PENERIMAAN
+
+Uji tingkah laku yang boleh gagal atau memberi kesan nyata:
+
+1. App bermula dengan arahan Compose yang didokumenkan dan data kekal selepas restart.
+2. Keyword match memberi satu fixed reply tanpa panggilan model generatif.
+3. Input tidak sepadan menggunakan Gemini hanya apabila AI enabled.
+4. AI OFF tidak memanggil Gemini; Automation OFF tidak membalas automatik.
+5. Human takeover membatalkan output AI yang sedang diproses sebelum send.
+6. Webhook berulang tidak menghasilkan beberapa conversation/message/reply yang sama.
+7. Retry provider timeout tidak menghantar berulang secara membuta tuli.
+8. Flow menerima beberapa medan, menyimpan state, membolehkan pembetulan dan menyambung selepas restart.
+9. Form lengkap boleh handover walaupun dokumen belum lengkap.
+10. Follow-up dibatalkan/re-evaluate apabila pelanggan reply, opt-out, takeover atau Rejected.
+11. Official channel menolak free-form message di luar window yang dibenarkan dan menggunakan approved template apabila layak.
+12. QR disconnect/reconnect tidak mencetuskan balasan kepada history replay atau backlog luput.
+13. Tenant A tidak dapat membaca/mengubah data, files, jobs atau credential tenant B melalui UI, API atau MCP.
+14. Keyword/flow/knowledge boleh diubah melalui MCP dengan audit dan version conflict protection.
+15. Customer prompt injection tidak boleh memanggil admin tools atau mendedahkan secrets.
+16. Model boleh ditukar melalui website tanpa edit source dan model invalid menghasilkan error jelas.
+17. Kos dilabel estimated/actual/unavailable dengan sumber kadar; bukan nombor rekaan.
+18. Backup berjaya dipulihkan ke environment ujian.
+19. Ads read/write beroperasi pada account yang betul; perubahan berbelanja mengikut authorization yang ditetapkan.
+20. Tiada ujian production outbound/ad spend tanpa target dan arahan yang dibenarkan.
+
+Ujian mock tidak menggantikan bukti integrasi live. Laporan akhir mesti menunjukkan yang mana sudah disahkan dan yang mana masih memerlukan akses sebenar.
+
+
+16. HASIL KERJA YANG PERLU DISERAHKAN OLEH CODEX
+
+- Source code dalam repository milik projek.
+- README setup local, VPS, database migration dan operasi.
+- .env.example tanpa rahsia.
+- Dockerfiles, Compose, health checks dan persistent volume configuration.
+- Schema/migrations dan seed sintetik.
+- Provider adapter documentation, webhook setup dan error handling.
+- MCP tool schemas, auth configuration dan panduan sambungan client.
+- Ujian aliran kritikal dan keputusan run.
+- Panduan admin untuk keyword, knowledge, flow, human takeover dan follow-up.
+- Backup/restore, release/rollback dan cutover runbook.
+- Senarai dependency, version dan lesen yang relevan untuk jualan sistem.
+- Senarai fungsi siap, mock sahaja, belum siap dan dependency luaran.
+- Ringkasan penggunaan sumber selepas ujian; tiada dakwaan kapasiti tanpa ukuran.
+
+
+17. INPUT YANG MASIH BELUM DITETAPKAN
+
+Bukan sebab untuk menghentikan pembangunan local:
+- Nama produk dan branding akhir.
+- Repository/project directory sebenar.
+- Domain/subdomain.
+- VPS sebenar, spesifikasi, IP dan deployment access.
+- Nombor WhatsApp ujian dan nombor production yang hendak digunakan.
+- Mode pertama yang hendak dilancarkan, walaupun kedua-dua adapter diperlukan dalam skop.
+- Gemini key, project billing/quota dan model pilihan yang tersedia.
+- Meta app/business/WhatsApp assets, onboarding eligibility dan credential.
+- Meta Ads account dan permission sebenar.
+- Model jualan: SaaS bersama atau dedicated per pelanggan.
+- Pakej, harga, limits, billing dan payment gateway.
+- Jadual follow-up sebenar dan waktu bekerja.
+- Konfigurasi Fairuz live/export dan sama ada migrasi diperlukan.
+- Client MCP yang akan disambung serta mekanisme auth yang disokong.
+- Skop dan authorization pipeline deployment untuk perubahan kod.
+
+Gunakan placeholders yang jelas. Jangan mengambil nombor, keys atau account daripada projek lain secara automatik. Minta hanya input yang diperlukan apabila sampai ke integration atau launch berkenaan.
+
+
+18. SUMBER KEPUTUSAN DAN RUJUKAN TEKNIKAL
+
+Sumber perbincangan:
+- "Hostinger n8n agent", 19 Oktober 2026 waktu Malaysia: chatbot sendiri, Hostinger/VPS, Gemini API, tiga container tanpa n8n, keyword, pilihan official/QR, website, MCP, FB Ads dan sistem boleh dijual.
+- "Wsapme AI Chatbot Availability", 18 Oktober 2026: WhatsApp Business, nombor sedia ada dan pertanyaan coexistence/caj.
+- Konteks Fairuz, September hingga Oktober 2026: nada ringkas, flow semakan, borang, handover dan label/follow-up.
+- Projek Biruni POS/ecommerce dan MyAduan tidak menjadi skop produk ini; MyAduan hanya disebut sebagai contoh Master mahu mengubah sistem melalui arahan.
+
+Rujukan yang dibaca untuk menyemak aspek teknikal pada 20 Oktober 2026:
+- Google Gemini API keys: https://ai.google.dev/gemini-api/docs/api-key
+  Digunakan untuk server-side secret handling dan pengurusan key melalui AI Studio.
+- MCP authorization: https://modelcontextprotocol.io/specification/latest/basic/authorization
+  Digunakan untuk reka bentuk remote authenticated MCP dan scoped access.
+- MCP transports: https://modelcontextprotocol.io/specification/latest/basic/transports
+  Digunakan untuk pilihan Streamable HTTP dan keperluan keserasian client.
+- WhatsApp Business Messaging Policy: https://business.whatsapp.com/policy
+  Digunakan untuk opt-in/opt-out, service window/templates, escalation dan pengumpulan identifier sensitif.
+- Meta WhatsApp template endpoint collection:
+  https://www.postman.com/meta/whatsapp-business-platform/request/lwtlz1k/send-message-template-interactive
+- Baileys repository: https://github.com/WhiskeySockets/Baileys
+  Calon gateway QR; sambungan WhatsApp Web tidak rasmi, versi/lesen perlu dinilai.
+
+Rujukan untuk disemak oleh Codex ketika implementasi:
+- WhatsApp developer docs: https://developers.facebook.com/docs/whatsapp/
+- Marketing API docs: https://developers.facebook.com/docs/marketing-apis/
+  Halaman developer Meta tidak dapat dibaca sepenuhnya dalam penyediaan handoff ini. Permission, API version, coexistence dan langkah onboarding perlu disahkan dalam dokumentasi/account semasa; jangan meneka daripada handoff.
+- Sumber harga/promosi/spesifikasi KHIND: https://www.khindrto.com.my/
+  Katalog dan harga semasa tidak diimport atau disahkan melalui handoff ini.
+
+Spesifikasi API, model, harga dan syarat provider boleh berubah. Codex perlu mengesahkannya ketika implementasi tanpa mengubah keperluan perniagaan Master secara senyap.
+

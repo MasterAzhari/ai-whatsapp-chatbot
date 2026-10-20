@@ -1,0 +1,51 @@
+# Standalone stack: three containers (app, whatsapp-gateway, postgres).
+# For the existing pibot.io VPS, which already has caddy-gen and Postgres,
+# use deploy/pibot/ instead.
+name: chatbot
+
+services:
+  app:
+    build: { context: ., dockerfile: docker/app.Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://chatbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/chatbot
+      GATEWAY_URL: http://whatsapp-gateway:3100
+    depends_on:
+      postgres: { condition: service_healthy }
+      whatsapp-gateway: { condition: service_healthy }
+    ports:
+      # Bound to localhost; put a TLS reverse proxy on the host in front of it.
+      - "127.0.0.1:3000:3000"
+
+  whatsapp-gateway:
+    build: { context: ., dockerfile: docker/gateway.Dockerfile }
+    restart: unless-stopped
+    environment:
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set GATEWAY_TOKEN in .env}
+      GATEWAY_DRIVER: ${GATEWAY_DRIVER:-mock}
+    volumes:
+      - gateway-sessions:/data/sessions
+    # No published ports: reachable only from the app over the compose network.
+
+  postgres:
+    image: postgres:16.10-bookworm
+    restart: unless-stopped
+    environment:
+      # The image's POSTGRES_USER is a superuser, which bypasses row-level security,
+      # so the app uses a separate non-superuser role created by the init script.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}
+      CHATBOT_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-chatbot.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  gateway-sessions:

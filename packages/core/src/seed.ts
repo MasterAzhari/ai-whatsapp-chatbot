@@ -26,7 +26,7 @@ export async function seedDemo(db: Db, opts: { adminEmail: string; adminPassword
     ]],
     [tB, 'Tenant B', [['Pelanggan B1 (sintetik)', 'Hello, ada stok?']]],
   ] as const) {
-    const channelId = await createChannel(db, tenantId, { name: `${label} mock channel`, provider: 'mock', status: 'connected' });
+    const channelId = await createChannel(db, tenantId, { name: `${label} mock channel`, provider: 'mock', status: 'connected', automationEnabled: true });
     let i = 0;
     for (const [name, text] of customers) {
       i++;

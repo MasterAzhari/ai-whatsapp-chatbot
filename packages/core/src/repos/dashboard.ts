@@ -13,10 +13,10 @@ export interface DashboardStats {
 export async function getDashboard(db: Db, ctx: TenantContext, days = 7): Promise<DashboardStats> {
   return inTenant(db, ctx, async (tx) => {
     const conv = await tx.query(
-      `SELECT count(*) FILTER (WHERE status = 'open') AS open,
-              count(*) FILTER (WHERE status = 'pending_human') AS pending_human,
-              count(*) FILTER (WHERE status = 'resolved') AS resolved,
-              count(*) FILTER (WHERE created_at >= date_trunc('day', now() AT TIME ZONE t.timezone) AT TIME ZONE t.timezone) AS new_today
+      `SELECT count(*) FILTER (WHERE c.status = 'open') AS open,
+              count(*) FILTER (WHERE c.status = 'pending_human') AS pending_human,
+              count(*) FILTER (WHERE c.status = 'resolved') AS resolved,
+              count(*) FILTER (WHERE c.created_at >= date_trunc('day', now() AT TIME ZONE t.timezone) AT TIME ZONE t.timezone) AS new_today
          FROM conversations c JOIN tenants t ON t.id = c.tenant_id`,
     );
     const origin = await tx.query(

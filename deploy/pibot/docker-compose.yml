@@ -1,0 +1,42 @@
+# Deploys the chatbot beside the existing services on the pibot.io VPS
+# (caddy-gen on 80/443, Postgres "typebot-db", network "root_default").
+# Separate compose project so it never edits /root/docker-compose.yml.
+#   cd /opt/chatbot && docker compose -f deploy/pibot/docker-compose.yml --env-file .env up -d --build
+name: chatbot
+
+services:
+  app:
+    build: { context: ../.., dockerfile: docker/app.Dockerfile }
+    restart: unless-stopped
+    env_file: ../../.env
+    environment:
+      # Non-superuser role created by deploy/pibot/create-db.sql inside typebot-db.
+      DATABASE_URL: postgres://chatbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@typebot-db:5432/chatbot
+      GATEWAY_URL: http://chatbot-gateway:3100
+    labels:
+      # caddy-gen issues the HTTPS certificate and routes bot.pibot.io here.
+      virtual.host: ${APP_HOST:-bot.pibot.io}
+      virtual.port: "3000"
+      virtual.tls-email: ${TLS_EMAIL:?set TLS_EMAIL}
+    networks: [root_default, internal]
+    depends_on:
+      gateway: { condition: service_healthy }
+
+  gateway:
+    build: { context: ../.., dockerfile: docker/gateway.Dockerfile }
+    container_name: chatbot-gateway
+    restart: unless-stopped
+    environment:
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set GATEWAY_TOKEN}
+      GATEWAY_DRIVER: ${GATEWAY_DRIVER:-mock}
+    volumes:
+      - gateway-sessions:/data/sessions
+    networks: [internal]   # not on the shared network, no published ports
+
+networks:
+  root_default:
+    external: true
+  internal:
+
+volumes:
+  gateway-sessions:

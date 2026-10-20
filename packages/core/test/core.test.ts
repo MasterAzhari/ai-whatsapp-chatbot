@@ -9,6 +9,7 @@ import { addMembership, createChannel, createTenant, createUser } from '../src/r
 import { ingestEvent } from '../src/inbound.js';
 import { claimDue, drainOnce, enqueueReply, processJob } from '../src/outbox.js';
 import { getConversation, listConversations, resumeBot, sendManualReply, takeOver } from '../src/repos/conversations.js';
+import { getDashboard } from '../src/repos/dashboard.js';
 import { MockChannelAdapter } from '../src/channels/mock.js';
 import { decryptSecret, encryptSecret } from '../src/secrets.js';
 import { freshDb } from './helpers.js';
@@ -246,6 +247,16 @@ describe('outbox', () => {
     await drainOnce(db, resolve);
     assert.equal((await status(m.messageId)).status, 'unknown');
     assert.equal(mock.sent.length, sentBefore);
+  });
+});
+
+describe('dashboard', () => {
+  test('counts only the caller tenant', async () => {
+    const a = await getDashboard(db, ctxA);
+    const b = await getDashboard(db, ctxB);
+    assert.ok(a.conversations.open + a.conversations.pendingHuman > b.conversations.open + b.conversations.pendingHuman);
+    assert.deepEqual(b.channels.map((c) => c.id), [chB]);
+    assert.ok(b.conversations.newToday >= 2);
   });
 });
 
