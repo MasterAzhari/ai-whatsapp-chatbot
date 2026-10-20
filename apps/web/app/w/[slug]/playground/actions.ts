@@ -2,13 +2,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
-import { createAiResolver, getDashboard, receiveInbound, simulate } from '@chatbot/core';
+import { createAiResolver, getDashboard, receiveInbound, simulate, splitBubbles } from '@chatbot/core';
 import { actionError, db, requireTenant } from '@/lib/server';
 
 export interface PlaygroundState {
   text?: string;
-  route?: { route: string; reason: string; reply?: string | null };
-  ai?: { ok: boolean; text?: string; detail?: string; reason?: string; tokens?: string };
+  route?: { route: string; reason: string; bubbles: string[]; imageAssetId: string | null };
+  ai?: { ok: boolean; bubbles?: string[]; detail?: string; reason?: string; tokens?: string };
   error?: string;
 }
 
@@ -18,12 +18,15 @@ export async function runPlayground(_prev: PlaygroundState, f: FormData): Promis
   try {
     const ctx = await requireTenant(slug);
     const r = await simulate(db(), ctx, { text, channelId: String(f.get('channelId')), callAi: f.get('callAi') === 'on', isLead: f.get('isLead') === 'on' }, createAiResolver(db()));
-    const route = { route: r.route.route, reason: r.route.reason, reply: 'reply' in r.route ? r.route.reply : null };
+    const reply = 'reply' in r.route ? r.route.reply : null;
+    const imageAssetId = r.route.route === 'keyword' ? r.route.imageAssetId : null;
+    // Shown as the customer would get it: picture with the first bubble, then the rest.
+    const route = { route: r.route.route, reason: r.route.reason, bubbles: reply ? splitBubbles(reply) : [], imageAssetId };
     if (!r.ai) return { text, route };
     const ai = r.ai.ok
       ? {
           ok: true,
-          text: r.ai.text,
+          bubbles: splitBubbles(r.ai.text),
           tokens: `${r.ai.usage.inputTokens ?? 'tiada data'} masuk / ${r.ai.usage.outputTokens ?? 'tiada data'} keluar · ${r.ai.latencyMs} ms · ${r.ai.model}`,
         }
       : { ok: false, reason: r.ai.reason, detail: r.ai.detail };

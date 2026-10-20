@@ -68,7 +68,8 @@ export interface ImportResult {
 
 /**
  * Applies a template to this workspace in one transaction: settings are overwritten,
- * keyword rules are added (or replace the existing ones when replaceRules is set).
+ * keyword rules are added, replacing rules of the same name (or all existing ones when
+ * replaceRules is set).
  */
 const PLACEHOLDER_ID = '00000000-0000-4000-8000-000000000000';
 
@@ -102,6 +103,8 @@ export async function importBotTemplate(
     );
     let rulesRemoved = 0;
     if (opts.replaceRules) rulesRemoved = (await tx.query('DELETE FROM keyword_rules')).rowCount ?? 0;
+    // Importing the same template again updates its rules instead of adding a second copy of each.
+    else rulesRemoved = (await tx.query('DELETE FROM keyword_rules WHERE name = ANY($1)', [rules.map((r) => r.name)])).rowCount ?? 0;
     for (const v of rules) {
       const imageId = v.image ? await insertImage(tx, ctx.tenantId, v.image.mimeType, Buffer.from(v.image.data, 'base64')) : null;
       await tx.query(

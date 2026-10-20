@@ -29,13 +29,25 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
           {state.route && (
             <>
               <div><b>{ROUTE[state.route.route as keyof typeof ROUTE] ?? state.route.route}</b> · <span className="muted">{state.route.reason}</span></div>
-              {state.route.reply && <div className="bubble outbound" style={{ marginTop: 8 }}>{state.route.reply}</div>}
+              {state.route.bubbles.map((b, i) => (
+                <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>
+                  {i === 0 && state.route!.imageAssetId && (
+                    <img src={`/w/${slug}/media/${state.route!.imageAssetId}`} alt="Gambar" style={{ display: 'block', maxWidth: 240, borderRadius: 8, marginBottom: 6 }} />
+                  )}
+                  {b}
+                </div>
+              ))}
+              {state.route.bubbles.length === 0 && state.route.imageAssetId && (
+                <div className="bubble outbound" style={{ marginTop: 8 }}>
+                  <img src={`/w/${slug}/media/${state.route.imageAssetId}`} alt="Gambar" style={{ display: 'block', maxWidth: 240, borderRadius: 8 }} />
+                </div>
+              )}
             </>
           )}
           {state.ai &&
             (state.ai.ok ? (
               <>
-                <div className="bubble outbound" style={{ marginTop: 8 }}>{state.ai.text}</div>
+                {state.ai.bubbles?.map((b, i) => <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>{b}</div>)}
                 <div className="small muted">{state.ai.tokens}</div>
               </>
             ) : (

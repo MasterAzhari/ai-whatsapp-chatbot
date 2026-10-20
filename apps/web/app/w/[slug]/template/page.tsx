@@ -105,7 +105,7 @@ export default async function Template({ params, searchParams }: { params: Promi
             Fail template (.json)
             <input type="file" name="file" accept="application/json,.json" required />
           </label>
-          <label className="check"><input type="checkbox" name="replace" /> Buang keyword sedia ada dulu (jika tidak, keyword baru ditambah)</label>
+          <label className="check"><input type="checkbox" name="replace" /> Buang semua keyword sedia ada dulu (jika tidak, keyword sama nama diganti dan yang lain kekal)</label>
           <div className="small muted">Tetapan bot workspace ini akan diganti dengan isi template.</div>
           <button className="primary" type="submit">Import</button>
         </form>

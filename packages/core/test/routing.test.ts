@@ -605,7 +605,7 @@ describe('bot template (copy setup to an agent workspace)', () => {
     assert.equal(t.settings.aiModel, (await getBotSettings(db, ctxA)).aiModel);
   });
 
-  test('import copies the setup; add mode keeps old rules, replace mode drops them', async () => {
+  test('import copies the setup; add mode keeps old rules and updates same-named ones, replace mode drops them', async () => {
     const t = JSON.parse(JSON.stringify(await exportBotTemplate(db, ctxA)));
     const r1 = await importBotTemplate(db, ctxC, t, { replaceRules: false });
     assert.equal(r1.rulesRemoved, 0);
@@ -616,6 +616,10 @@ describe('bot template (copy setup to an agent workspace)', () => {
     assert.equal(c.aiKeyMasked, null); // agent sets their own key
     const names = (await listKeywordRules(db, ctxC)).map((r) => r.name);
     assert.ok(names.includes('Lama') && names.includes('Kawasan'));
+    // Importing again replaces the same-named rules rather than adding a second copy.
+    const again = await importBotTemplate(db, ctxC, t, { replaceRules: false });
+    assert.equal(again.rulesRemoved, t.keywordRules.length);
+    assert.deepEqual((await listKeywordRules(db, ctxC)).map((r) => r.name).sort(), [...names].sort());
     const r2 = await importBotTemplate(db, ctxC, t, { replaceRules: true });
     assert.equal(r2.rulesRemoved, names.length);
     assert.equal((await listKeywordRules(db, ctxC)).length, t.keywordRules.length);
@@ -876,8 +880,8 @@ describe('replies in several bubbles', () => {
       assert.equal(await routeInbound(db, tG, m.messageId, { aiFor: async () => null }), 'keyword');
       const before = adapter.sent.length;
       while (Object.values(await drainOnce(db, resolveAdapter)).some((n) => n > 0));
-      // later bubbles wait a moment; send them now
-      await withTenant(db, tG, (tx) => tx.query("UPDATE outbox SET next_attempt_at = now() WHERE conversation_id = $1 AND state = 'pending'", [m.conversationId]));
+      // later bubbles wait a moment; send them now, keeping their order
+      await withTenant(db, tG, (tx) => tx.query("UPDATE outbox SET next_attempt_at = next_attempt_at - interval '1 hour' WHERE conversation_id = $1 AND state = 'pending'", [m.conversationId]));
       while (Object.values(await drainOnce(db, resolveAdapter)).some((n) => n > 0));
       assert.deepEqual(adapter.sent.slice(before).map((s) => s.text), ['Harga dulu', 'Kelebihan pula', 'Taip DAFTAR']);
       const rows = await withTenant(db, tG, (tx) => tx.query("SELECT body FROM messages WHERE conversation_id = $1 AND direction = 'outbound' ORDER BY created_at", [m.conversationId]));
