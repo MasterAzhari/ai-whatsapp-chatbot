@@ -23,6 +23,13 @@ export default async function Inbox({ params, searchParams }: {
           <div style={{ fontSize: 48 }}>💬</div>
           <b>MasterBot Inbox</b>
           <p className="small muted">Pilih chat di sebelah kiri. Chat yang ditanda Perlu staf menunggu anda.</p>
+          {ctx.role !== 'operator' && (
+            <p className="small">
+              <a href={`/w/${slug}/inbox/export?days=7`}>Muat turun chat 7 hari (untuk semakan)</a>
+              <br />
+              <span className="muted">Nama, nombor telefon, IC dan emel disembunyikan.</span>
+            </p>
+          )}
         </div>
       </section>
     </div>

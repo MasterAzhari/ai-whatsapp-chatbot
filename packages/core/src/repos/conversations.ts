@@ -201,3 +201,77 @@ export async function setStatus(db: Db, ctx: TenantContext, conversationId: stri
     if (!r.rowCount) throw new Error('conversation not found');
   });
 }
+
+/** Hides phone, IC and email numbers so a conversation can be shared for review. */
+export function redactPersonal(text: string): string {
+  return text
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[emel]')
+    .replace(/\b\d{6}-?\d{2}-?\d{4}\b/g, '[IC]')
+    .replace(/\+?\d[\d\s-]{7,}\d/g, '[nombor]');
+}
+
+export interface ReviewExport {
+  format: 'chatbot-conversation-review';
+  exportedAt: string;
+  days: number;
+  conversations: Array<{
+    customer: string; // "Customer 1", no name or number
+    status: string;
+    humanTakeover: boolean;
+    labels: string[];
+    messages: Array<{ at: string; from: 'customer' | 'bot' | 'staff' | 'note'; origin: string; text: string | null; picture: boolean; route: string | null }>;
+  }>;
+}
+
+/**
+ * Recent conversations with names, numbers, IC and email hidden, for reviewing how the
+ * bot answers (admins only, recorded in the audit log).
+ */
+export async function exportConversationsForReview(db: Db, ctx: TenantContext, days: number): Promise<ReviewExport> {
+  requireRole(ctx, 'admin');
+  const d = z.number().int().min(1).max(30).parse(days);
+  return inTenant(db, ctx, async (tx) => {
+    const c = await tx.query(
+      `SELECT c.id, c.status, c.human_takeover,
+              coalesce((SELECT array_agg(l.name ORDER BY l.name) FROM contact_label_assignments a JOIN contact_labels l ON l.id = a.label_id
+                         WHERE a.contact_id = c.contact_id), '{}') AS labels
+         FROM conversations c
+        WHERE c.last_message_at > now() - make_interval(days => $1)
+        ORDER BY c.last_message_at DESC LIMIT 300`,
+      [d],
+    );
+    const ids = c.rows.map((r) => r.id);
+    const m = await tx.query(
+      `SELECT conversation_id, direction, origin, body, image_asset_id, route, created_at FROM messages
+        WHERE conversation_id = ANY($1) AND created_at > now() - make_interval(days => $2)
+        ORDER BY created_at, id`,
+      [ids, d],
+    );
+    const byConv = new Map<string, ReviewExport['conversations'][number]['messages']>();
+    for (const x of m.rows) {
+      const list = byConv.get(x.conversation_id) ?? [];
+      list.push({
+        at: x.created_at.toISOString(),
+        from: x.direction === 'note' ? 'note' : x.direction === 'inbound' ? 'customer' : x.origin === 'human' ? 'staff' : 'bot',
+        origin: x.origin,
+        text: x.body == null ? null : redactPersonal(x.body),
+        picture: !!x.image_asset_id,
+        route: x.route ? `${x.route.route}: ${x.route.reason}` : null,
+      });
+      byConv.set(x.conversation_id, list);
+    }
+    await audit(tx, ctx, 'conversations.export_review', 'tenant', ctx.tenantId, null, { days: d, conversations: ids.length });
+    return {
+      format: 'chatbot-conversation-review',
+      exportedAt: new Date().toISOString(),
+      days: d,
+      conversations: c.rows.map((r, i) => ({
+        customer: `Customer ${i + 1}`,
+        status: r.status,
+        humanTakeover: r.human_takeover,
+        labels: r.labels,
+        messages: byConv.get(r.id) ?? [],
+      })),
+    };
+  });
+}

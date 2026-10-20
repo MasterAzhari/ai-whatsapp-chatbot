@@ -22,6 +22,7 @@ import { getBotSettings, setCredential, updateBotSettings, VersionConflictError,
 import { getUsageSummary } from '../src/repos/usage.js';
 import { createAiResolver } from '../src/routing/ai-resolver.js';
 import { exportBotTemplate, importBotTemplate } from '../src/repos/template.js';
+import { redactPersonal } from '../src/repos/conversations.js';
 import { changeOwnName, changeOwnPassword, countDemoData, createAgentWorkspace, listAgentWorkspaces, purgeDemoData, renameWorkspace, resetAgentPassword, setAgentDisabled } from '../src/repos/agents.js';
 import { followupOnce, DEFAULT_FOLLOWUPS } from '../src/followup.js';
 import { freshDb } from './helpers.js';
@@ -887,5 +888,15 @@ describe('replies in several bubbles', () => {
       const rows = await withTenant(db, tG, (tx) => tx.query("SELECT body FROM messages WHERE conversation_id = $1 AND direction = 'outbound' ORDER BY created_at", [m.conversationId]));
       assert.deepEqual(rows.rows.map((o) => o.body), ['Harga dulu', 'Kelebihan pula', 'Taip DAFTAR']);
     }
+  });
+});
+
+describe('conversation review export', () => {
+  test('hides phone, IC and email but keeps prices and package names', () => {
+    assert.equal(
+      redactPersonal('Nama Ali, IC 900101-07-5555, tel 012-345 6789, ali@mail.com. Combo D 1.0+1.5HP RM220, poskod 08000'),
+      'Nama Ali, IC [IC], tel [nombor], [emel]. Combo D 1.0+1.5HP RM220, poskod 08000',
+    );
+    assert.equal(redactPersonal('+60123456789 / 900101075555'), '[nombor] / [IC]');
   });
 });
