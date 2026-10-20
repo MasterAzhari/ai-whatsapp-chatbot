@@ -23,6 +23,7 @@ export interface MessageView {
   body: string | null;
   status: string;
   statusDetail: string | null;
+  route: { route: string; reason: string } | null; // why an inbound message was (not) answered
   createdAt: string;
 }
 
@@ -74,7 +75,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
     const r = c.rows[0];
     if (!r) return null;
     const m = await tx.query(
-      `SELECT id, direction, origin, body, status, status_detail, created_at
+      `SELECT id, direction, origin, body, status, status_detail, route, created_at
          FROM messages WHERE conversation_id = $1 ORDER BY created_at, id`,
       [id],
     );
@@ -96,6 +97,7 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
         body: x.body,
         status: x.status,
         statusDetail: x.status_detail,
+        route: x.route,
         createdAt: x.created_at.toISOString(),
       })),
     };

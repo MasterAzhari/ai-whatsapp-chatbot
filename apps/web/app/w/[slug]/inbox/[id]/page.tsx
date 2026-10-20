@@ -6,6 +6,7 @@ import { db, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
 
+const ROUTE = { none: 'tiada balasan', stop: 'berhenti', human: 'serah kepada manusia', keyword: 'keyword', ai: 'AI' } as const;
 const ORIGIN = { customer: 'Pelanggan', keyword: 'Keyword', flow: 'Flow', ai: 'AI', human: 'Manusia', system: 'Sistem' } as const;
 
 export default async function ConversationPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
@@ -71,6 +72,9 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
                 {ORIGIN[m.origin]} · {new Date(m.createdAt).toLocaleString('ms-MY', { timeZone: 'Asia/Kuala_Lumpur' })}
                 {m.direction === 'outbound' && <> · {m.status}{m.statusDetail ? ` (${m.statusDetail})` : ''}</>}
               </div>
+              {m.direction === 'inbound' && (
+                <div className="route">{m.route ? `Bot: ${ROUTE[m.route.route as keyof typeof ROUTE] ?? m.route.route}, ${m.route.reason}` : 'Bot: belum diproses'}</div>
+              )}
             </div>
           ))}
         </div>

@@ -141,10 +141,13 @@ export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolve
   if (!prep || prep.state !== 'sending') return 'cancelled';
 
   const automated = prep.origin !== 'human';
+  // System notices (e.g. "a staff member will reply") are sent as part of a handover,
+  // so takeover blocks only bot-generated answers.
+  const botAnswer = automated && prep.origin !== 'system';
   const block =
     prep.expired ? 'expired before it could be sent'
     : !prep.provider_identity ? 'no provider identity for contact'
-    : automated && prep.human_takeover ? 'human takeover active'
+    : botAnswer && prep.human_takeover ? 'human takeover active'
     : automated && !prep.automation_enabled ? 'automation disabled for channel'
     : automated && prep.opted_out ? 'contact opted out'
     : null;

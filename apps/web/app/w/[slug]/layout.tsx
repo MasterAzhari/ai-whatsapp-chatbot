@@ -26,6 +26,13 @@ export default async function WorkspaceLayout({ children, params }: { children: 
         <nav>
           <a href={`/w/${slug}`}>Dashboard</a>
           <a href={`/w/${slug}/inbox`}>Inbox</a>
+          {ctx.role !== 'operator' && (
+            <>
+              <a href={`/w/${slug}/keywords`}>Keyword</a>
+              <a href={`/w/${slug}/settings`}>Tetapan bot</a>
+              <a href={`/w/${slug}/playground`}>Playground</a>
+            </>
+          )}
           <a href={`/w/${slug}/connections`}>Sambungan</a>
           {ws.length > 1 && <a href="/">Tukar workspace</a>}
         </nav>

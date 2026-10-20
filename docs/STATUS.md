@@ -17,20 +17,37 @@ not proven live), **Not started**.
 | Human takeover / resume, manual reply, internal notes | Done | tests + browser walkthrough |
 | Website: login, workspace picker, dashboard, inbox, conversation, connections | Done | Playwright walkthrough against local build |
 | whatsapp-gateway service with internal token auth | Mock only | gateway tests; no real WhatsApp session |
-| AI provider contract | Mock only | Gemini adapter is Phase 2 |
 | Docker images + compose (pibot) | Done | Built and running on the VPS 2026-10-20; standalone compose not yet run |
 | Deployment to pibot.io | Done (mock WhatsApp) | https://bot.pibot.io/api/health ok; existing services unaffected |
 
-Test run 2026-10-20: core 21/21, gateway 3/3.
+Test run 2026-10-20 (Phase 1): core 21/21, gateway 3/3.
 
-## Next: Phase 2 (chatbot core)
+## Phase 2: chatbot core
 
-QR driver in the gateway (library evaluation first), keyword rules, flow state,
-Gemini adapter with usage tracking, knowledge, AI/automation switches in the UI,
-playground. Then Phase 3: official Cloud API adapter and authenticated MCP.
+| Item | State | Evidence |
+|------|-------|----------|
+| Schema: bot settings, keyword rules, rule hits, route reason, AI usage, pricing rates (RLS on tenant tables) | Done | `packages/core/migrations/002_routing.sql`; isolation tests |
+| Routing order: switches/takeover → stop → ask-for-human → keyword → AI | Done | `decide` tests |
+| Keyword engine: exact / whole-word phrase, priority, channel scope, cooldown, label, handover | Done | matcher + routing tests |
+| Routing jobs: inbound stored and routing job queued in one transaction; worker routes, one decision per message | Done | test: routing twice queues one reply |
+| Gemini adapter (direct REST, key in header only), model list from the API | Mock only | tests with mocked fetch; not yet called with a real key |
+| AI safety: guardrails appended, reply discarded if takeover/opt-out/newer message during generation, fallback or handover on failure | Done | routing tests |
+| AI usage: tokens as reported (null when not reported), estimated cost only where a rate exists | Done | usage tests; dashboard table |
+| API key stored encrypted, shown masked, never audited | Done | test |
+| Website: Keyword, Tetapan bot (key, model picker, switches), Playground (dry run + test customer on MOCK channel), route reason in conversation | Done | Playwright walkthrough: rule created, playground match, mock customer got keyword reply via worker |
+| Internal webhook for gateway events (`/api/internal/gateway/events`, GATEWAY_TOKEN) | Done | builds; used once the QR driver lands |
+| QR driver in the gateway | Not started | library evaluation first; needs a test number |
+| Flow state, knowledge snippets | Not started | |
+
+Test run 2026-10-20 (Phase 2): core 47/47, gateway 3/3.
+
+## Next
+
+QR driver (library evaluation), flow state, knowledge. Then Phase 3: official
+Cloud API adapter and authenticated MCP.
 
 ## Needs from the owner (only when we reach that step)
 
 - A WhatsApp **test** number for QR pairing.
-- A Gemini API key (from Google AI Studio) for testing.
-- Go-ahead before the first deploy to `bot.pibot.io`.
+- A Gemini API key (from Google AI Studio), entered in Tetapan bot (never in chat).
+- Go-ahead before each deploy to `bot.pibot.io`.

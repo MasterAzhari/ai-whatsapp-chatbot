@@ -1,14 +1,36 @@
 import type { Db } from './db.js';
 import { drainOnce, type AdapterResolver } from './outbox.js';
+import { claimJobs, finishJob } from './jobs.js';
+import { routeInbound, type RouterDeps } from './routing/router.js';
+import { ROUTE_JOB } from './routing/receive.js';
 
 export interface WorkerOptions {
   intervalMs?: number;
   log?: (msg: string) => void;
+  /** When given, the worker also routes inbound messages (keyword, AI). */
+  router?: RouterDeps;
+}
+
+/** Routes queued inbound messages. Returns how many jobs were handled. */
+export async function routeOnce(db: Db, deps: RouterDeps, log: (m: string) => void = () => {}): Promise<number> {
+  const jobs = await claimJobs(db, [ROUTE_JOB], 5);
+  await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        const outcome = await routeInbound(db, job.tenantId, String(job.payload.messageId), deps);
+        await finishJob(db, job, 'done', outcome);
+      } catch (err) {
+        log(`route ${job.id} failed: ${(err as Error).message}`);
+        await finishJob(db, job, 'pending', (err as Error).message, 5_000 * job.attempts);
+      }
+    }),
+  );
+  return jobs.length;
 }
 
 /**
- * Polls the durable outbox. Runs as its own process (never inside a request
- * handler) and stops cleanly: stop() waits for the current batch to finish.
+ * Polls routing jobs and the durable outbox. Runs as its own process (never inside
+ * a request handler) and stops cleanly: stop() waits for the current batch to finish.
  */
 export function startWorker(db: Db, resolve: AdapterResolver, opts: WorkerOptions = {}) {
   const interval = opts.intervalMs ?? 1000;
@@ -19,9 +41,10 @@ export function startWorker(db: Db, resolve: AdapterResolver, opts: WorkerOption
   const done = (async () => {
     while (!stopping) {
       try {
+        const routed = opts.router ? await routeOnce(db, opts.router, log) : 0;
         const c = await drainOnce(db, resolve);
-        const total = Object.values(c).reduce((a, b) => a + b, 0);
-        if (total) log(`processed ${JSON.stringify(c)}`);
+        const total = routed + Object.values(c).reduce((a, b) => a + b, 0);
+        if (total) log(`routed ${routed}, outbox ${JSON.stringify(c)}`);
         if (total) continue; // more may be due
       } catch (err) {
         log(`error: ${(err as Error).message}`);
