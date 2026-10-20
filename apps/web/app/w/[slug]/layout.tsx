@@ -38,6 +38,9 @@ export default async function WorkspaceLayout({ children, params }: { children: 
           {ctx.user.isPlatformOwner && <a href={`/w/${slug}/agents`}>Agent</a>}
           <a href={`/w/${slug}/account`}>Akaun</a>
           {ws.length > 1 && <a href="/">Tukar workspace</a>}
+          <form action={doLogout} className="nav-logout">
+            <button type="submit" className="link">Log keluar</button>
+          </form>
         </nav>
         <div className="bottom">
           <div>{ctx.user.name}</div>

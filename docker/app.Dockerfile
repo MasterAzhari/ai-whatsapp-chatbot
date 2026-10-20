@@ -22,6 +22,7 @@ COPY --from=build /src/packages/core/dist packages/core/dist
 COPY packages/core/migrations packages/core/migrations
 COPY --from=build /src/apps/web/.next apps/web/.next
 COPY apps/web/next.config.mjs apps/web/
+COPY apps/web/public apps/web/public
 COPY docker/start-app.mjs ./
 USER node
 EXPOSE 3000
