@@ -3,12 +3,15 @@ import { drainOnce, type AdapterResolver } from './outbox.js';
 import { claimJobs, finishJob } from './jobs.js';
 import { routeInbound, type RouterDeps } from './routing/router.js';
 import { ROUTE_JOB } from './routing/receive.js';
+import { followupOnce } from './followup.js';
 
 export interface WorkerOptions {
   intervalMs?: number;
   log?: (msg: string) => void;
   /** When given, the worker also routes inbound messages (keyword, AI). */
   router?: RouterDeps;
+  /** How often to look for chats that need a follow-up (default one minute). */
+  followupEveryMs?: number;
 }
 
 /** Routes queued inbound messages. Returns how many jobs were handled. */
@@ -37,14 +40,21 @@ export function startWorker(db: Db, resolve: AdapterResolver, opts: WorkerOption
   const log = opts.log ?? ((m: string) => console.log(`[worker] ${m}`));
   let stopping = false;
   let wake: (() => void) | null = null;
+  const followupEvery = opts.followupEveryMs ?? 60_000;
+  let nextFollowup = 0;
 
   const done = (async () => {
     while (!stopping) {
       try {
         const routed = opts.router ? await routeOnce(db, opts.router, log) : 0;
+        let followups = 0;
+        if (opts.router && Date.now() >= nextFollowup) {
+          nextFollowup = Date.now() + followupEvery;
+          followups = await followupOnce(db, opts.router, log);
+        }
         const c = await drainOnce(db, resolve);
-        const total = routed + Object.values(c).reduce((a, b) => a + b, 0);
-        if (total) log(`routed ${routed}, outbox ${JSON.stringify(c)}`);
+        const total = routed + followups + Object.values(c).reduce((a, b) => a + b, 0);
+        if (total) log(`routed ${routed}, follow-ups ${followups}, outbox ${JSON.stringify(c)}`);
         if (total) continue; // more may be due
       } catch (err) {
         log(`error: ${(err as Error).message}`);

@@ -3,7 +3,7 @@ import { inTenant, type TenantContext } from '../auth.js';
 
 export interface DashboardStats {
   conversations: { open: number; pendingHuman: number; resolved: number; newToday: number };
-  repliesByOrigin: Record<'keyword' | 'flow' | 'ai' | 'human', number>;
+  repliesByOrigin: Record<'keyword' | 'flow' | 'ai' | 'followup' | 'human', number>;
   messageStatus: Record<string, number>;
   outbox: Record<string, number>;
   channels: Array<{ id: string; name: string; provider: string; status: string; automationEnabled: boolean; aiEnabled: boolean }>;
@@ -34,7 +34,7 @@ export async function getDashboard(db: Db, ctx: TenantContext, days = 7): Promis
       `SELECT id, name, provider, status, automation_enabled, ai_enabled FROM channels ORDER BY name`,
     );
     const c = conv.rows[0];
-    const byOrigin = { keyword: 0, flow: 0, ai: 0, human: 0 };
+    const byOrigin = { keyword: 0, flow: 0, ai: 0, followup: 0, human: 0 };
     for (const r of origin.rows) if (r.origin in byOrigin) byOrigin[r.origin as keyof typeof byOrigin] = r.n;
     return {
       conversations: { open: +c.open, pendingHuman: +c.pending_human, resolved: +c.resolved, newToday: +c.new_today },

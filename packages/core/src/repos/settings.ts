@@ -33,6 +33,11 @@ export interface BotSettings {
   typingIndicator: boolean;
   leadMode: boolean;
   leadDays: number; // 0 = no limit
+  followupEnabled: boolean;
+  followupGapsMin: number[]; // wait before each follow-up, counted from the previous bot message
+  followupStartHour: number; // Malaysia time; follow-ups only go out from this hour...
+  followupEndHour: number; // ...until this hour
+  followupInstruction: string;
 }
 
 function fromRow(r: Record<string, any>): BotSettings {
@@ -58,6 +63,11 @@ function fromRow(r: Record<string, any>): BotSettings {
     typingIndicator: r.typing_indicator,
     leadMode: r.lead_mode,
     leadDays: r.lead_days,
+    followupEnabled: r.followup_enabled,
+    followupGapsMin: r.followup_gaps_min,
+    followupStartHour: r.followup_start_hour,
+    followupEndHour: r.followup_end_hour,
+    followupInstruction: r.followup_instruction,
   };
 }
 
@@ -108,6 +118,11 @@ export const SettingsUpdate = z.object({
   typingIndicator: z.boolean().optional(),
   leadMode: z.boolean().optional(),
   leadDays: z.number().int().min(0).max(365).optional(),
+  followupEnabled: z.boolean().optional(),
+  followupGapsMin: z.array(z.number().int().min(5).max(10080)).min(1).max(3).optional(),
+  followupStartHour: z.number().int().min(0).max(23).optional(),
+  followupEndHour: z.number().int().min(1).max(24).optional(),
+  followupInstruction: z.string().trim().max(2000).optional(),
 });
 
 export const SETTINGS_COLUMNS: Record<string, string> = {
@@ -131,6 +146,11 @@ export const SETTINGS_COLUMNS: Record<string, string> = {
   typingIndicator: 'typing_indicator',
   leadMode: 'lead_mode',
   leadDays: 'lead_days',
+  followupEnabled: 'followup_enabled',
+  followupGapsMin: 'followup_gaps_min',
+  followupStartHour: 'followup_start_hour',
+  followupEndHour: 'followup_end_hour',
+  followupInstruction: 'followup_instruction',
 };
 
 /** Random wait before an automated reply, from the tenant's pacing settings. */
@@ -165,6 +185,10 @@ export async function updateBotSettings(
     const min = v.replyDelayMinSec ?? before.replyDelayMinSec;
     const max = v.replyDelayMaxSec ?? before.replyDelayMaxSec;
     if (max < min) throw Object.assign(new z.ZodError([{ code: 'custom', path: ['replyDelayMaxSec'], message: 'must be at least the minimum delay' }]));
+    const start = v.followupStartHour ?? before.followupStartHour;
+    const end = v.followupEndHour ?? before.followupEndHour;
+    if (end <= start) throw new z.ZodError([{ code: 'custom', path: ['followupEndHour'], message: 'must be after the start hour' }]);
+    if (v.followupEnabled && !before.followupEnabled) sets.push('followup_enabled_at = now()');
     const { rows } = await tx.query(
       `UPDATE bot_settings SET ${[...sets, 'version = version + 1', 'updated_by = $3', 'updated_at = now()'].join(', ')}
         WHERE tenant_id = $1 AND version = $2 RETURNING *`,

@@ -3,7 +3,7 @@ import { db, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
 
-const ORIGIN_LABEL = { keyword: 'Keyword', flow: 'Flow', ai: 'AI', human: 'Manusia' } as const;
+const ORIGIN_LABEL = { keyword: 'Keyword', flow: 'Flow', ai: 'AI', followup: 'Follow-up', human: 'Manusia' } as const;
 
 export default async function Dashboard({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

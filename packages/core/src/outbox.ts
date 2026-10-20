@@ -6,7 +6,7 @@ export interface EnqueueReplyInput {
   tenantId: string;
   conversationId: string;
   text: string;
-  origin: 'keyword' | 'flow' | 'ai' | 'human' | 'system';
+  origin: 'keyword' | 'flow' | 'ai' | 'human' | 'system' | 'followup';
   authorUserId?: string;
   idempotencyKey: string;
   expiresInMs?: number; // automated replies go stale; human replies default to 24h

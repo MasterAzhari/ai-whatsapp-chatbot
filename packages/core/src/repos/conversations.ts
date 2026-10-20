@@ -25,7 +25,7 @@ export interface ConversationSummary {
 export interface MessageView {
   id: string;
   direction: 'inbound' | 'outbound' | 'note';
-  origin: 'customer' | 'keyword' | 'flow' | 'ai' | 'human' | 'system';
+  origin: 'customer' | 'keyword' | 'flow' | 'ai' | 'human' | 'system' | 'followup';
   body: string | null;
   /** Readable names of media sent with the message, e.g. "Voice note". */
   attachments: string[];

@@ -76,6 +76,12 @@ export default async function Settings({ params, searchParams }: { params: Promi
           typingIndicator: f.get('typingIndicator') === 'on',
           leadMode: f.get('leadMode') === 'on',
           leadDays: Number(f.get('leadDays')),
+          followupEnabled: f.get('followupEnabled') === 'on',
+          // Hours on the form, minutes in the database; an empty box means fewer follow-ups.
+          followupGapsMin: [1, 2, 3].map((i) => opt(`followupGap${i}`)).filter((v) => v != null).map((v) => Math.round(Number(v) * 60)),
+          followupStartHour: Number(f.get('followupStartHour')),
+          followupEndHour: Number(f.get('followupEndHour')),
+          followupInstruction: String(f.get('followupInstruction') ?? ''),
         }),
       'settings',
     );
@@ -225,6 +231,27 @@ export default async function Settings({ params, searchParams }: { params: Promi
             Balasan bila lead hantar video, atau voice note dan gambar yang AI tak dapat baca (kosongkan untuk tidak membalas; chat tetap ditanda perlu staf)
             <textarea name="mediaReply" rows={2} maxLength={1000} defaultValue={s.mediaReply ?? ''} />
           </label>
+          <h3 className="small muted">Auto follow-up</h3>
+          <label className="check"><input type="checkbox" name="followupEnabled" defaultChecked={s.followupEnabled} /> Follow-up pelanggan yang senyap</label>
+          <div className="row">
+            {[0, 1, 2].map((i) => (
+              <label key={i}>
+                Follow-up {i + 1} (jam selepas mesej bot sebelumnya)
+                <input name={`followupGap${i + 1}`} type="number" min={0.25} max={168} step={0.25} defaultValue={s.followupGapsMin[i] != null ? s.followupGapsMin[i]! / 60 : ''} />
+              </label>
+            ))}
+          </div>
+          <div className="row">
+            <label>Hantar dari jam (waktu Malaysia)<input name="followupStartHour" type="number" min={0} max={23} defaultValue={s.followupStartHour} /></label>
+            <label>Hingga jam<input name="followupEndHour" type="number" min={1} max={24} defaultValue={s.followupEndHour} /></label>
+          </div>
+          <label>
+            Gaya follow-up untuk AI
+            <textarea name="followupInstruction" rows={3} maxLength={2000} defaultValue={s.followupInstruction} />
+          </label>
+          <div className="small muted">
+            Bila pelanggan tak balas mesej bot, AI hantar follow-up ikut masa di atas, paling banyak 3 kali, kemudian berhenti sehingga pelanggan mesej semula. Kosongkan kotak untuk kurangkan bilangan. Tiada follow-up untuk chat yang staf sedang kendalikan, perlu staf, selesai, berlabel Rejected, atau pelanggan minta dihubungi kemudian. Hanya chat yang dibalas bot selepas suis ini dihidupkan.
+          </div>
           <label>Keyword berhenti (mesej tepat, satu setiap baris)<textarea name="stopKeywords" rows={3} defaultValue={s.stopKeywords.join('\n')} /></label>
           <label>Keyword minta manusia (frasa, satu setiap baris)<textarea name="humanKeywords" rows={3} defaultValue={s.humanKeywords.join('\n')} /></label>
           <button className="primary" type="submit">Simpan tetapan</button>

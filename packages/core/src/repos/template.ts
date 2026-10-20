@@ -94,6 +94,7 @@ export async function importBotTemplate(
       vals.push(val);
       sets.push(`${col} = $${vals.length}`);
     }
+    if (t.settings.followupEnabled && !before.followupEnabled) sets.push('followup_enabled_at = now()');
     const { rows } = await tx.query(
       `UPDATE bot_settings SET ${[...sets, 'version = version + 1', 'updated_by = $2', 'updated_at = now()'].join(', ')}
         WHERE tenant_id = $1 RETURNING *`,

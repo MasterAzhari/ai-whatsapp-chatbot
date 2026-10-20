@@ -23,6 +23,7 @@ import { getUsageSummary } from '../src/repos/usage.js';
 import { createAiResolver } from '../src/routing/ai-resolver.js';
 import { exportBotTemplate, importBotTemplate } from '../src/repos/template.js';
 import { changeOwnName, changeOwnPassword, countDemoData, createAgentWorkspace, listAgentWorkspaces, purgeDemoData, renameWorkspace, resetAgentPassword, setAgentDisabled } from '../src/repos/agents.js';
+import { followupOnce, DEFAULT_FOLLOWUPS } from '../src/followup.js';
 import { freshDb } from './helpers.js';
 
 // ------------------------------------------------------------------ pure parts
@@ -62,6 +63,7 @@ const baseSettings: BotSettings = {
   aiModel: 'gemini-test', maxOutputTokens: 100, temperature: null, historyTurns: 5, aiTimeoutMs: 5000,
   fallbackReply: null, handoverReply: 'Staf akan balas', mediaReply: 'Sila taip', stopKeywords: ['stop'], humanKeywords: ['nak cakap dengan orang'],
   replyDelayMinSec: 0, replyDelayMaxSec: 0, typingIndicator: false, leadMode: false, leadDays: 30,
+  followupEnabled: false, followupGapsMin: [60, 180, 600], followupStartHour: 8, followupEndHour: 23, followupInstruction: '',
 };
 
 describe('decide order', () => {
@@ -744,5 +746,109 @@ describe('removing sample data', () => {
     assert.equal(await qrChats(), before);
     assert.equal((await withSystem(db, (tx) => tx.query("SELECT 1 FROM tenants WHERE slug = 'sample-x'"))).rowCount, 0);
     assert.equal((await withSystem(db, (tx) => tx.query('SELECT 1 FROM tenants WHERE id = $1', [tA]))).rowCount, 1); // has a QR channel
+  });
+});
+
+describe('auto follow-up', () => {
+  let tF: string, chF: string;
+  let ai: ScriptedAI;
+  const deps = { aiFor: async () => ai as AIProvider };
+  const ok = (text: string): GenerateReplyResult => ({ ok: true, text, usage: { inputTokens: 5, outputTokens: 5 }, model: 'gemini-test', latencyMs: 1 });
+
+  before(async () => {
+    tF = await createTenant(db, { slug: 'fu', name: 'F' });
+    chF = await createChannel(db, tF, { name: 'F', provider: 'mock', status: 'connected', automationEnabled: true, aiEnabled: true });
+    await withTenant(db, tF, (tx) => tx.query(
+      `INSERT INTO bot_settings (tenant_id, ai_enabled, ai_model, reply_delay_min_sec, reply_delay_max_sec, followup_enabled,
+                                 followup_enabled_at, followup_start_hour, followup_end_hour)
+       VALUES ($1, true, 'gemini-test', 0, 0, true, now() - interval '30 days', 0, 24)`, [tF]));
+  });
+  beforeEach(() => { ai = new ScriptedAI(ok('Jawapan AI')); });
+
+  async function say(text: string, from: string) {
+    const r = await receiveInbound(db, tF, chF, { type: 'message', providerMessageId: randomUUID(), providerIdentity: from, text, timestamp: new Date() });
+    assert.equal(r.kind, 'stored');
+    const s = r as { messageId: string; conversationId: string };
+    await routeInbound(db, tF, s.messageId, deps);
+    await drainOnce(db, resolveAdapter);
+    return s.conversationId;
+  }
+  /** Moves the whole chat back in time, as if the customer had been quiet that long. */
+  const age = (conv: string, minutes: number) =>
+    withTenant(db, tF, (tx) => tx.query(`UPDATE messages SET created_at = created_at - make_interval(mins => $2) WHERE conversation_id = $1`, [conv, minutes]));
+  const followups = async (conv: string) =>
+    (await withTenant(db, tF, (tx) => tx.query("SELECT body FROM messages WHERE conversation_id = $1 AND origin = 'followup' ORDER BY created_at", [conv]))).rows.map((r) => r.body as string);
+  async function run() {
+    const n = await followupOnce(db, deps);
+    await drainOnce(db, resolveAdapter);
+    return n;
+  }
+
+  test('nudges a quiet customer three times at most, then waits for them to write again', async () => {
+    const conv = await say('aircond ada lagi?', `fu-${randomUUID()}`);
+    assert.equal(await run(), 0); // not yet due
+    await age(conv, 59);
+    assert.equal(await run(), 0);
+    await age(conv, 2);
+    ai.result = ok('Hai Cik, masih berminat?');
+    assert.equal(await run(), 1);
+    assert.match(ai.lastInput!.systemInstruction, /follow-up ke-1 daripada maksimum 3/);
+    assert.equal(ai.lastInput!.history.at(-2)!.text, 'Jawapan AI');
+    assert.equal(await run(), 0); // the next gap counts from the follow-up just sent
+    await age(conv, 181);
+    assert.equal(await run(), 1);
+    await age(conv, 601);
+    assert.match((await (async () => { await run(); return ai.lastInput!.systemInstruction; })()), /follow-up terakhir/);
+    await age(conv, 5000);
+    assert.equal(await run(), 0); // three is the limit
+    assert.equal((await followups(conv)).length, 3);
+  });
+
+  test('a reply from the customer resets the count; old chats, takeover and Rejected are left alone', async () => {
+    const who = `fu-${randomUUID()}`;
+    const conv = await say('harga berapa?', who);
+    await age(conv, 61);
+    assert.equal(await run(), 1);
+    await age(conv, 181);
+    assert.equal(await run(), 1);
+    await say('sorry sibuk, ok saya tengok', who);
+    await age(conv, 61);
+    assert.equal(await run(), 1);
+    assert.equal((await followups(conv)).length, 3);
+
+    // due more than 12 hours ago (e.g. the worker was down): dropped, not sent late
+    const old = await say('info aircond', `fu-${randomUUID()}`);
+    await age(old, 60 * 24);
+    assert.equal(await run(), 0);
+
+    const taken = await say('nak tanya', `fu-${randomUUID()}`);
+    await withTenant(db, tF, (tx) => tx.query('UPDATE conversations SET human_takeover = true WHERE id = $1', [taken]));
+    await age(taken, 61);
+    assert.equal(await run(), 0);
+
+    const no = await say('mahal', `fu-${randomUUID()}`);
+    await withTenant(db, tF, async (tx) => {
+      const l = await tx.query("INSERT INTO contact_labels (tenant_id, name) VALUES ($1, 'Rejected') ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id", [tF]);
+      await tx.query('INSERT INTO contact_label_assignments (tenant_id, contact_id, label_id) SELECT $1, contact_id, $3 FROM conversations WHERE id = $2', [tF, no, l.rows[0].id]);
+    });
+    await age(no, 61);
+    assert.equal(await run(), 0);
+  });
+
+  test('the AI can decline (customer asked to be contacted later); a failed AI uses a fixed message', async () => {
+    const who = `fu-${randomUUID()}`;
+    const conv = await say('nanti malam saya call', who);
+    await age(conv, 61);
+    ai.result = ok('SKIP');
+    assert.equal(await run(), 0);
+    ai.result = ok('Hai Cik!');
+    assert.equal(await run(), 0); // stopped until the customer writes
+    assert.equal((await followups(conv)).length, 0);
+
+    const conv2 = await say('ok', `fu-${randomUUID()}`);
+    await age(conv2, 61);
+    ai.result = { ok: false, reason: 'timeout', detail: 'slow' };
+    assert.equal(await run(), 1);
+    assert.deepEqual(await followups(conv2), [DEFAULT_FOLLOWUPS[0]]);
   });
 });

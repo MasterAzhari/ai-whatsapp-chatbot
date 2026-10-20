@@ -9,7 +9,7 @@ import { AutoRefresh } from '../refresh';
 export const dynamic = 'force-dynamic';
 
 const ROUTE = { none: 'tiada balasan', stop: 'berhenti', human: 'serah kepada manusia', keyword: 'keyword', media: 'voice/gambar, minta taip', ai: 'AI' } as const;
-const ORIGIN = { customer: '', keyword: '🔑 Keyword', flow: 'Flow', ai: '🤖 AI', human: '🙋 Manusia', system: '⚙️ Sistem' } as const;
+const ORIGIN = { customer: '', keyword: '🔑 Keyword', flow: 'Flow', ai: '🤖 AI', human: '🙋 Manusia', system: '⚙️ Sistem', followup: '⏰ Follow-up' } as const;
 const TICK: Record<string, { mark: string; title: string; cls?: string }> = {
   queued: { mark: '🕓', title: 'Dalam giliran' },
   accepted: { mark: '✓', title: 'Diterima' },
