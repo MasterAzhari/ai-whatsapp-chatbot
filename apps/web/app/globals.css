@@ -34,7 +34,8 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
 .side { background: var(--panel); border-right: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 4px; }
-.side .brand { font-weight: 700; margin-bottom: 4px; }
+.side .brand { font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.side .brand img { border-radius: 6px; }
 .side .tenant { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 .side nav a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--text); }
 .side nav a:hover { background: var(--bg); text-decoration: none; }
@@ -102,7 +103,7 @@ button.danger { color: var(--danger); }
   .bubble { max-width: 90%; }
 }
 code.secret { font-size: 15px; padding: 2px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); user-select: all; }
-.login .brand { font-weight: 700; font-size: 20px; margin-bottom: 8px; }
+.login .login-logo { display: block; width: 160px; height: 160px; margin: 0 auto 8px; border-radius: 16px; }
 .side nav button.link { background: none; border: 0; padding: 6px 10px; color: var(--muted); font: inherit; white-space: nowrap; cursor: pointer; }
 
 /* ---- Inbox, laid out like WhatsApp ---- */

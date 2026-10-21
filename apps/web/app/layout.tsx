@@ -8,7 +8,7 @@ export const metadata = {
   appleWebApp: { capable: true, title: 'MasterBot', statusBarStyle: 'default' as const },
 };
 
-export const viewport = { themeColor: '#127c56' };
+export const viewport = { themeColor: '#02051a' };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

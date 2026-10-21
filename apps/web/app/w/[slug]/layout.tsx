@@ -21,7 +21,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand">MasterBot</div>
+        <div className="brand"><img src="/logo-mark.png" alt="" width={28} height={28} />MasterBot</div>
         <div className="tenant">{current?.name}</div>
         <nav>
           <a href={`/w/${slug}`}>Dashboard</a>

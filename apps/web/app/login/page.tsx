@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { error } = await searchParams;
   return (
     <form action={doLogin} className="login">
-      <div className="brand">MasterBot</div>
+      <img className="login-logo" src="/logo-full.jpg" alt="MasterBot" width={240} height={240} />
       <h1>Log in</h1>
       {error && <div className="error">Wrong email or password.</div>}
       <label>
