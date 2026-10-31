@@ -14,7 +14,7 @@ import { AnthropicProvider, thinkingFor, toMessages } from '../src/ai/anthropic.
 import { matchPattern, normalize, pickRule, type KeywordRule } from '../src/routing/match.js';
 import { decide, extractHandover, leadActive, routeInbound } from '../src/routing/router.js';
 import { receiveGatewayEvents, receiveInbound } from '../src/routing/receive.js';
-import { addQrChannel, connectQrChannel, qrChannelStatus } from '../src/repos/channels.js';
+import { addQrChannel, connectQrChannel, deleteQrChannel, qrChannelStatus } from '../src/repos/channels.js';
 import { routeOnce } from '../src/worker.js';
 import { simulate } from '../src/routing/playground.js';
 import { createKeywordRule, getImageAsset, listKeywordRules, saveImageAsset, updateKeywordRule } from '../src/repos/keywords.js';
@@ -622,6 +622,22 @@ describe('QR channels', () => {
     assert.deepEqual(after.rows[0], { status: 'connected', display_number: '+60100000000' });
     await assert.rejects(qrChannelStatus(db, ctxB, id, fake('connected')), /not found/);
     await assert.rejects(connectQrChannel(db, ctxA, chA, fake('pairing')), /not found/); // mock channel is not QR
+  });
+
+  test('a channel without conversations can be deleted; one with history cannot', async () => {
+    const id = await addQrChannel(db, ctxA, 'Tak jadi');
+    let stopped = 0;
+    const ctl = () => ({ ...fake('pairing')(), disconnect: async () => { stopped++; } });
+    await assert.rejects(deleteQrChannel(db, ctxB, id, ctl), /not found/);
+    await deleteQrChannel(db, ctxA, id, ctl);
+    assert.equal(stopped, 1);
+    const left = await withTenant(db, tA, (tx) => tx.query('SELECT 1 FROM channels WHERE id = $1', [id]));
+    assert.equal(left.rowCount, 0);
+    const used = await addQrChannel(db, ctxA, 'Ada sejarah');
+    const ev = { type: 'message', providerMessageId: randomUUID(), providerIdentity: '60199@s.whatsapp.net', text: 'hai', timestamp: new Date().toISOString() };
+    await receiveGatewayEvents(db, { channelId: used, events: [ev] });
+    await assert.rejects(deleteQrChannel(db, ctxA, used, ctl), /conversation/);
+    assert.equal(stopped, 1);
   });
 
   test('gateway events land in the right tenant and only for QR channels', async () => {

@@ -71,3 +71,23 @@ export async function logoutQrChannel(db: Db, ctx: TenantContext, channelId: str
   await record(db, ctx, channelId, { state: 'disconnected' });
   await inTenant(db, ctx, (tx) => audit(tx, ctx, 'channel.logout', 'channel', channelId, null, null));
 }
+
+/**
+ * Removes a QR channel that is no longer wanted (e.g. one that was never scanned).
+ * Refused while the channel has conversations, so chat history is never erased this way.
+ */
+export async function deleteQrChannel(db: Db, ctx: TenantContext, channelId: string, control = defaultControl): Promise<void> {
+  requireRole(ctx, 'admin');
+  await requireQrChannel(db, ctx, channelId);
+  const { rows } = await inTenant(db, ctx, (tx) =>
+    tx.query<{ n: number }>('SELECT count(*)::int AS n FROM conversations WHERE channel_id = $1', [channelId]),
+  );
+  if (rows[0]!.n > 0) {
+    throw new Error(`This channel has ${rows[0]!.n} conversation(s), so it cannot be deleted. Use "Disconnect and unlink" instead; the chat history stays.`);
+  }
+  await control(channelId).disconnect(); // stops a pending QR or linked session on the gateway
+  await inTenant(db, ctx, async (tx) => {
+    const del = await tx.query<{ name: string }>('DELETE FROM channels WHERE id = $1 RETURNING name', [channelId]);
+    await audit(tx, ctx, 'channel.delete', 'channel', channelId, { name: del.rows[0]?.name ?? null }, null);
+  });
+}

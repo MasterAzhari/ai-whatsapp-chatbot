@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import QRCode from 'qrcode';
-import { connectQrChannel, getDashboard, logoutQrChannel, qrChannelStatus } from '@chatbot/core';
+import { connectQrChannel, deleteQrChannel, getDashboard, logoutQrChannel, qrChannelStatus } from '@chatbot/core';
 import { actionError, db, requireTenant } from '@/lib/server';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +43,18 @@ export default async function QrChannel({ params, searchParams }: { params: Prom
     redirect(msg ? `${path}?error=${encodeURIComponent(msg)}` : path);
   }
 
+  async function remove() {
+    'use server';
+    const ctx = await requireTenant(slug);
+    let msg: string | null = null;
+    try {
+      await deleteQrChannel(db(), ctx, id);
+    } catch (err) {
+      msg = actionError(err);
+    }
+    redirect(msg ? `${path}?error=${encodeURIComponent(msg)}` : `/w/${slug}/connections`);
+  }
+
   return (
     <>
       {status.state === 'pairing' && <meta httpEquiv="refresh" content="5" />}
@@ -82,6 +94,14 @@ export default async function QrChannel({ params, searchParams }: { params: Prom
             </>
           )}
         </div>
+      </div>
+      <div className="panel">
+        <form action={remove} className="form">
+          <div><b>Delete this channel</b></div>
+          <div className="small muted">For a channel you no longer need, such as one that was never scanned. A channel with conversations cannot be deleted; disconnect it instead.</div>
+          <label className="small"><input type="checkbox" name="confirm" required /> Yes, delete {ch.name}</label>
+          <button className="danger" type="submit">Delete channel</button>
+        </form>
       </div>
     </>
   );
