@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import QRCode from 'qrcode';
 import { connectQrChannel, deleteQrChannel, getDashboard, logoutQrChannel, qrChannelStatus } from '@chatbot/core';
 import { actionError, db, requireTenant } from '@/lib/server';
@@ -13,7 +13,8 @@ export default async function QrChannel({ params, searchParams }: { params: Prom
   const ctx = await requireTenant(slug);
   if (ctx.role === 'operator') redirect(`/w/${slug}/connections`);
   const ch = (await getDashboard(db(), ctx)).channels.find((c) => c.id === id && c.provider === 'qr');
-  if (!ch) notFound();
+  // A deleted channel (or a page reload right after deleting) goes back to the list instead of a 404.
+  if (!ch) redirect(`/w/${slug}/connections`);
   const path = `/w/${slug}/connections/${id}`;
 
   const status = await qrChannelStatus(db(), ctx, id);
