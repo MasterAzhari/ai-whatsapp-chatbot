@@ -26,6 +26,7 @@ const TemplateRule = z.object({
   cooldownSeconds: z.number().int(),
   startsLead: z.boolean().optional(),
   aiReply: z.boolean().optional(),
+  product: z.string().nullable().optional(),
   /** The rule's picture, carried in the file itself so it copies to other workspaces. */
   image: z.object({ mimeType: z.string(), data: z.string().max(Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 4) }).optional(),
 });
@@ -110,9 +111,9 @@ export async function importBotTemplate(
     for (const v of rules) {
       const imageId = v.image ? await insertImage(tx, ctx.tenantId, v.image.mimeType, Buffer.from(v.image.data, 'base64')) : null;
       await tx.query(
-        `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply)
-         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [ctx.tenantId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, imageId, v.aiReply],
+        `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply, product)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [ctx.tenantId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, imageId, v.aiReply, v.product],
       );
     }
     const result = { rulesAdded: rules.length, rulesRemoved };

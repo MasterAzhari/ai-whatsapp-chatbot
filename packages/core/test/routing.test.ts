@@ -94,6 +94,21 @@ describe('decide order', () => {
     assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'harga' }).route, 'keyword');
     assert.equal(d({ settings: leadMode, rules, isLead: true, text: 'hello' }).route, 'ai');
   });
+  test('products: a chat about one product skips the other product keywords', () => {
+    const rules = [
+      rule({ name: 'Harga aircond', patterns: ['harga'], priority: 50, product: 'Aircond' }),
+      rule({ name: 'Harga peti', patterns: ['harga'], priority: 51, product: 'ChillMaster X' }),
+      rule({ name: 'Syarat', patterns: ['syarat'], priority: 60 }),
+    ];
+    const pick = (text: string, product?: string | null) => { const r = d({ rules, text, product }); return r.route === 'keyword' ? r.ruleName : r.route; };
+    assert.equal(pick('harga'), 'Harga aircond'); // unknown product: lowest priority
+    assert.equal(pick('harga', 'chillmaster x'), 'Harga peti'); // case and spacing do not matter
+    assert.equal(pick('harga', 'Aircond'), 'Harga aircond');
+    assert.equal(pick('syarat', 'ChillMaster X'), 'Syarat'); // rules without a product answer every chat
+    const withLead = [...rules, rule({ name: 'Lead peti', patterns: ['info peti'], priority: 5, product: 'ChillMaster X', startsLead: true })];
+    const lead = d({ rules: withLead, text: 'info peti', product: 'Aircond' });
+    assert.ok(lead.route === 'keyword' && lead.ruleName === 'Lead peti'); // a lead keyword switches the product
+  });
   test('voice, picture or video without text: ask to type, but only for leads; stickers ignored', () => {
     const leadMode = { ...baseSettings, leadMode: true };
     const voice = d({ text: '', attachments: ['audio'] });
@@ -337,6 +352,35 @@ describe('routing', () => {
       while ((await routeOnce(db, deps)) > 0); // clear the routing jobs these messages queued
       await settings({ leadMode: false });
       await updateKeywordRule(db, ctxA, lead.id, lead.version, { name: 'Lead aircond', matchType: 'phrase', patterns: ['saya nak info aircond'], replyText: 'x', enabled: false });
+    }
+  });
+
+  test('product keywords: the lead keyword sets the chat product, later keywords follow it', async () => {
+    const mk = (name: string, patterns: string[], priority: number, product: string | null, extra = {}) =>
+      createKeywordRule(db, ctxA, { name, matchType: 'phrase', patterns, priority, replyText: name, product, ...extra });
+    const made = [
+      await mk('P lead fridge', ['nak info chillmaster x'], 6, 'ChillMaster X', { startsLead: true }),
+      await mk('P harga aircond', ['berapa harga'], 50, 'Aircond'),
+      await mk('P harga fridge', ['berapa harga'], 51, 'ChillMaster X'),
+    ];
+    try {
+      const from = `prod-${randomUUID()}`;
+      const first = await inbound('Saya nak info ChillMaster X', from);
+      assert.equal(await routeInbound(db, tA, first.messageId, deps), 'keyword');
+      const conv = await withTenant(db, tA, (tx) => tx.query('SELECT product FROM conversations WHERE id = $1', [first.conversationId]));
+      assert.equal(conv.rows[0].product, 'ChillMaster X');
+      const q = await inbound('berapa harga', from);
+      assert.equal(await routeInbound(db, tA, q.messageId, deps), 'keyword');
+      const routed = await withTenant(db, tA, (tx) => tx.query('SELECT route FROM messages WHERE id = $1', [q.messageId]));
+      assert.equal(routed.rows[0].route.ruleName, 'P harga fridge');
+      // another chat with no product yet gets the first match
+      const other = await inbound('berapa harga', `prod-${randomUUID()}`);
+      await routeInbound(db, tA, other.messageId, deps);
+      const r2 = await withTenant(db, tA, (tx) => tx.query('SELECT route FROM messages WHERE id = $1', [other.messageId]));
+      assert.equal(r2.rows[0].route.ruleName, 'P harga aircond');
+    } finally {
+      while ((await routeOnce(db, deps)) > 0);
+      for (const r of made) await updateKeywordRule(db, ctxA, r.id, r.version, { name: r.name, matchType: 'phrase', patterns: r.patterns, replyText: 'x', enabled: false });
     }
   });
 

@@ -17,7 +17,7 @@ export type Route =
   | { route: 'none'; reason: string }
   | { route: 'stop'; reason: string }
   | { route: 'human'; reason: string; reply: string | null }
-  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; imageAssetId: string | null; setLabel: string | null; handover: boolean; startsLead: boolean }
+  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; imageAssetId: string | null; setLabel: string | null; handover: boolean; startsLead: boolean; product: string | null }
   | { route: 'media'; reason: string; reply: string | null }
   | { route: 'ai'; reason: string };
 
@@ -30,6 +30,7 @@ export interface DecisionInput {
   humanTakeover: boolean;
   optedOut: boolean;
   isLead: boolean; // the chat already came in through a lead keyword
+  product?: string | null; // the product this chat is about, if known
   aiAllowed: boolean; // tenant + channel + conversation switches, and a model chosen
   settings: BotSettings;
   rules: KeywordRule[];
@@ -61,7 +62,7 @@ export function decide(d: DecisionInput): Route {
   const human = matchPattern(d.text, 'phrase', d.settings.humanKeywords);
   if (human) return { route: 'human', reason: `asked for a human ("${human}")`, reply: d.settings.handoverReply };
 
-  const hit = pickRule(d.text, d.rules, { channelId: d.channelId, lastHitAt: d.lastHitAt });
+  const hit = pickRule(d.text, d.rules, { channelId: d.channelId, lastHitAt: d.lastHitAt, product: d.product });
   if (hit?.rule.aiReply && d.aiAllowed) return { route: 'ai', reason: `rule "${hit.rule.name}" matched "${hit.pattern}": AI answers` };
   if (hit) return keywordRoute(hit.rule, hit.pattern);
   if (!d.aiAllowed) return { route: 'none', reason: 'no keyword matched and AI is off' };
@@ -86,6 +87,7 @@ function keywordRoute(rule: KeywordRule, pattern: string): Route {
     reply: rule.replyText,
     imageAssetId: rule.imageAssetId ?? null,
     setLabel: rule.setLabel,
+    product: rule.product ?? null,
     handover: rule.handover,
     startsLead: !!rule.startsLead,
   };
@@ -129,12 +131,13 @@ interface Snapshot {
   text: string;
   settings: BotSettings;
   history: ChatTurn[];
+  product: string | null;
 }
 
 async function loadContext(tx: Tx, messageId: string) {
   const { rows } = await tx.query(
     `SELECT m.id, m.body, m.attachments, m.direction, m.route, m.conversation_id, m.created_at,
-            c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at, c.contact_id, c.channel_id,
+            c.human_takeover, c.ai_enabled AS conv_ai, c.lead_started_at, c.product, c.contact_id, c.channel_id,
             ch.automation_enabled, ch.ai_enabled AS channel_ai,
             ct.opted_out_at IS NOT NULL AS opted_out, ct.phone_e164,
             EXISTS (SELECT 1 FROM messages n WHERE n.conversation_id = m.conversation_id AND n.direction = 'inbound'
@@ -148,6 +151,10 @@ async function loadContext(tx: Tx, messageId: string) {
   );
   return rows[0];
 }
+
+/** Tells the AI which product the chat is about (set by its product keyword). */
+export const productNote = (product: string | null | undefined) =>
+  product ? `Produk yang Cik sedang tanya dalam chat ini: ${product}. Jawab untuk produk ini kecuali Cik tanya produk lain.` : '';
 
 /** A chat is a lead from its lead keyword until leadDays have passed (0 = no limit). */
 export function leadActive(startedAt: Date | null, leadDays: number, now = new Date()): boolean {
@@ -314,6 +321,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       humanTakeover: m.human_takeover,
       optedOut: m.opted_out,
       isLead: leadActive(m.lead_started_at, settings.leadDays),
+      product: m.product,
       aiAllowed,
       settings,
       rules,
@@ -359,6 +367,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           });
         }
         if (d.setLabel) await applyLabel(tx, tenantId, m.contact_id, d.setLabel);
+        if (d.product) await tx.query('UPDATE conversations SET product = $2 WHERE id = $1', [m.conversation_id, d.product]);
         if (d.handover) await notifyStaff(tx, tenantId, m.conversation_id, d.setLabel ? `${d.ruleName} (label ${d.setLabel})` : d.ruleName, key('notify'));
         // A lead keyword after the window has passed (a new ad click) starts a new window.
         if (d.startsLead && !leadActive(m.lead_started_at, settings.leadDays)) {
@@ -387,7 +396,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           [m.conversation_id, messageId, settings.historyTurns],
         );
         const history = hist.rows.reverse().map((r) => ({ role: r.direction === 'inbound' ? 'customer' : 'assistant', text: r.body }) as ChatTurn);
-        return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history };
+        return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history, product: m.product as string | null };
       }
     }
   });
@@ -400,7 +409,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
   const result: GenerateReplyResult = provider
     ? await provider.generateReply({
         model: s.aiModel!,
-        systemInstruction: [s.systemInstruction.trim(), `Your name is ${s.personaName}.`, AI_GUARDRAILS].filter(Boolean).join('\n\n'),
+        systemInstruction: [s.systemInstruction.trim(), `Your name is ${s.personaName}.`, productNote(phaseA.product), AI_GUARDRAILS].filter(Boolean).join('\n\n'),
         history: phaseA.history,
         knowledge: [], // knowledge retrieval arrives with the knowledge module
         maxOutputTokens: s.maxOutputTokens,

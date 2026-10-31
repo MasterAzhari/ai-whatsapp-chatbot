@@ -25,6 +25,7 @@ function ruleFromForm(f: FormData, imageAssetId: string | null) {
     channelId: channel || null,
     replyText: reply || null,
     setLabel: label || null,
+    product: String(f.get('product') ?? '').trim() || null,
     handover: f.get('handover') === 'on',
     startsLead: f.get('startsLead') === 'on',
     aiReply: f.get('aiReply') === 'on',
@@ -99,6 +100,7 @@ export default async function Keywords({ params, searchParams }: { params: Promi
                   {r.imageAssetId && <img src={`/w/${slug}/media/${r.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 80, borderRadius: 6, marginBottom: 4 }} />}
                   {r.replyText && <div>Reply: {r.replyText.slice(0, 80)}</div>}
                   {r.setLabel && <div>Label: {r.setLabel}</div>}
+                  {r.product && <div>Product: <b>{r.product}</b></div>}
                   {r.startsLead && <div><span className="badge ok">Keyword lead</span></div>}
                   {r.handover && <div>Hand over to human</div>}
                   {r.aiReply && <div>AI answers</div>}
@@ -165,6 +167,8 @@ function RuleForm({ action, rule, channels, slug }: { action: (f: FormData) => P
         </>
       )}
       <label>Customer label (optional)<input name="setLabel" maxLength={60} defaultValue={rule?.setLabel ?? ''} /></label>
+      <label>Product (optional)<input name="product" maxLength={60} placeholder="e.g. Aircond or ChillMaster X" defaultValue={rule?.product ?? ''} />
+        <span className="small muted">When this keyword answers, the chat is about this product, and other products&apos; keywords stop answering it. Leave empty for keywords that suit every product.</span></label>
       <label>
         Channel
         <select name="channelId" defaultValue={rule?.channelId ?? ''}>

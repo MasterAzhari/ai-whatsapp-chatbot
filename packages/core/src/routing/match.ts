@@ -31,7 +31,10 @@ export interface KeywordRule {
   imageAssetId?: string | null; // picture sent with the reply
   startsLead?: boolean; // matching it makes the chat a lead (lead mode)
   aiReply?: boolean; // the AI answers instead of the fixed reply (falls back to it when AI is off)
+  product?: string | null; // only for chats about this product (null = any chat)
 }
+
+export const sameProduct = (a: string, b: string) => normalize(a) === normalize(b);
 
 /** Returns the pattern that matched, or null. */
 export function matchPattern(text: string, matchType: MatchType, patterns: string[]): string | null {
@@ -58,13 +61,15 @@ export interface RuleMatch {
 export function pickRule(
   text: string,
   rules: KeywordRule[],
-  opts: { channelId: string; lastHitAt?: (ruleId: string) => Date | undefined; now?: Date } = { channelId: '' },
+  opts: { channelId: string; lastHitAt?: (ruleId: string) => Date | undefined; now?: Date; product?: string | null } = { channelId: '' },
 ): RuleMatch | null {
   const now = opts.now ?? new Date();
   const sorted = [...rules].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
   for (const rule of sorted) {
     if (!rule.enabled) continue;
     if (rule.channelId && rule.channelId !== opts.channelId) continue;
+    // A chat about one product skips the other products' rules; a lead keyword (a new ad) can switch it.
+    if (rule.product && opts.product && !rule.startsLead && !sameProduct(rule.product, opts.product)) continue;
     const pattern = matchPattern(text, rule.matchType, rule.patterns);
     if (!pattern) continue;
     const last = opts.lastHitAt?.(rule.id);
