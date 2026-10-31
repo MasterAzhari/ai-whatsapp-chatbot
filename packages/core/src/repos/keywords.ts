@@ -28,6 +28,7 @@ function fromRow(r: Record<string, any>): KeywordRuleView {
     aiReply: r.ai_reply,
     product: r.product,
     imageAssetId: r.image_asset_id,
+    extraImageIds: r.extra_image_ids ?? [],
     version: r.version,
     updatedAt: r.updated_at.toISOString(),
   };
@@ -61,23 +62,25 @@ export const RuleInput = z
     aiReply: z.boolean().default(false), // let the AI answer (with the whole chat) instead of replyText
     product: z.string().trim().max(60).nullable().default(null).transform((p) => p || null), // only for chats about this product
     imageAssetId: z.string().uuid().nullable().default(null),
+    extraImageIds: z.array(z.string().uuid()).max(3).default([]), // more pictures after the first
   })
+  .refine((r) => !r.extraImageIds.length || r.imageAssetId, 'add the first picture before more pictures')
   .refine((r) => r.replyText || r.setLabel || r.handover || r.imageAssetId || r.aiReply, 'a rule needs a reply, a picture, a label, handover or AI')
   .refine((r) => !r.imageAssetId || (splitBubbles(r.replyText ?? '')[0] ?? '').length <= MAX_CAPTION, `reply with a picture can be at most ${MAX_CAPTION} characters`);
 
-async function checkImage(tx: Tx, id: string | null) {
-  if (id && !(await tx.query('SELECT 1 FROM media_assets WHERE id = $1', [id])).rowCount) throw new Error('picture not found');
+async function checkImage(tx: Tx, id: string | null, extra: string[] = []) {
+  for (const x of [id, ...extra]) if (x && !(await tx.query('SELECT 1 FROM media_assets WHERE id = $1', [x])).rowCount) throw new Error('picture not found');
 }
 
 export async function createKeywordRule(db: Db, ctx: TenantContext, input: z.input<typeof RuleInput>, source: 'web' | 'mcp' = 'web') {
   requireRole(ctx, 'admin');
   const v = RuleInput.parse(input);
   return inTenant(db, ctx, async (tx) => {
-    await checkImage(tx, v.imageAssetId);
+    await checkImage(tx, v.imageAssetId, v.extraImageIds);
     const { rows } = await tx.query(
-      `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply, product)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
-      [ctx.tenantId, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId, v.aiReply, v.product],
+      `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply, product, extra_image_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+      [ctx.tenantId, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId, v.aiReply, v.product, v.extraImageIds],
     );
     const rule = fromRow(rows[0]);
     await audit(tx, ctx, 'keyword_rule.create', 'keyword_rule', rule.id, null, rule, source);
@@ -98,12 +101,12 @@ export async function updateKeywordRule(
   return inTenant(db, ctx, async (tx) => {
     const before = await tx.query('SELECT * FROM keyword_rules WHERE id = $1 FOR UPDATE', [id]);
     if (!before.rows[0]) throw new Error('rule not found');
-    await checkImage(tx, v.imageAssetId);
+    await checkImage(tx, v.imageAssetId, v.extraImageIds);
     const { rows } = await tx.query(
       `UPDATE keyword_rules SET channel_id = $3, name = $4, match_type = $5, patterns = $6, priority = $7, enabled = $8,
-              reply_text = $9, set_label = $10, handover = $11, cooldown_seconds = $12, starts_lead = $13, image_asset_id = $14, ai_reply = $15, product = $16, version = version + 1, updated_at = now()
+              reply_text = $9, set_label = $10, handover = $11, cooldown_seconds = $12, starts_lead = $13, image_asset_id = $14, ai_reply = $15, product = $16, extra_image_ids = $17, version = version + 1, updated_at = now()
         WHERE id = $1 AND version = $2 RETURNING *`,
-      [id, expectedVersion, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId, v.aiReply, v.product],
+      [id, expectedVersion, v.channelId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, v.imageAssetId, v.aiReply, v.product, v.extraImageIds],
     );
     if (!rows[0]) throw new VersionConflictError('rule changed since you loaded it; reload and try again');
     const rule = fromRow(rows[0]);

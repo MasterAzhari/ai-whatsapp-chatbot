@@ -12,6 +12,7 @@ export interface EnqueueReplyInput {
   expiresInMs?: number; // automated replies go stale; human replies default to 24h
   delayMs?: number; // wait before the first send attempt (reply pacing)
   imageAssetId?: string | null; // picture sent with the text as its caption
+  extraImageIds?: string[]; // enqueueBubbles: more pictures, without caption, right after the first bubble
 }
 
 /**
@@ -64,18 +65,19 @@ export function splitBubbles(text: string): string[] {
 
 /**
  * Queues a reply as one or more bubbles, in order and a moment apart. The picture,
- * if any, goes with the first bubble as its caption.
+ * if any, goes with the first bubble as its caption; extra pictures follow it on
+ * their own, before the remaining bubbles.
  */
 export async function enqueueBubbles(tx: Tx, input: EnqueueReplyInput): Promise<void> {
   const bubbles = splitBubbles(input.text);
+  const extras = input.extraImageIds ?? [];
+  const parts: { text: string; image: string | null; key: string }[] = [];
   for (const [i, text] of bubbles.entries()) {
-    await enqueueReply(tx, {
-      ...input,
-      text,
-      imageAssetId: i === 0 ? input.imageAssetId : null,
-      idempotencyKey: i === 0 ? input.idempotencyKey : `${input.idempotencyKey}:${i + 1}`,
-      delayMs: (input.delayMs ?? 0) + i * BUBBLE_GAP_MS,
-    });
+    parts.push({ text, image: i === 0 ? input.imageAssetId ?? null : null, key: i === 0 ? input.idempotencyKey : `${input.idempotencyKey}:${i + 1}` });
+    if (i === 0) for (const [j, id] of extras.entries()) parts.push({ text: '', image: id, key: `${input.idempotencyKey}:img${j + 2}` });
+  }
+  for (const [i, p] of parts.entries()) {
+    await enqueueReply(tx, { ...input, text: p.text, imageAssetId: p.image, idempotencyKey: p.key, delayMs: (input.delayMs ?? 0) + i * BUBBLE_GAP_MS });
   }
 }
 

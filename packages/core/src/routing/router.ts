@@ -17,7 +17,7 @@ export type Route =
   | { route: 'none'; reason: string }
   | { route: 'stop'; reason: string }
   | { route: 'human'; reason: string; reply: string | null }
-  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; imageAssetId: string | null; setLabel: string | null; handover: boolean; startsLead: boolean; product: string | null }
+  | { route: 'keyword'; reason: string; ruleId: string; ruleName: string; pattern: string; reply: string | null; imageAssetId: string | null; extraImageIds: string[]; setLabel: string | null; handover: boolean; startsLead: boolean; product: string | null }
   | { route: 'media'; reason: string; reply: string | null }
   | { route: 'ai'; reason: string };
 
@@ -86,6 +86,7 @@ function keywordRoute(rule: KeywordRule, pattern: string): Route {
     pattern,
     reply: rule.replyText,
     imageAssetId: rule.imageAssetId ?? null,
+    extraImageIds: rule.extraImageIds ?? [],
     setLabel: rule.setLabel,
     product: rule.product ?? null,
     handover: rule.handover,
@@ -362,7 +363,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         if (d.handover) await handOver(tx, m.conversation_id);
         if (d.reply || d.imageAssetId) {
           await enqueueBubbles(tx, {
-            tenantId, conversationId: m.conversation_id, text: d.reply ?? '', imageAssetId: d.imageAssetId,
+            tenantId, conversationId: m.conversation_id, text: d.reply ?? '', imageAssetId: d.imageAssetId, extraImageIds: d.extraImageIds,
             origin: d.handover ? 'system' : 'keyword', idempotencyKey: key('kw'), delayMs: replyDelayMs(settings),
           });
         }

@@ -12,7 +12,20 @@ async function imageFromForm(ctx: TenantContext, f: FormData): Promise<string | 
   return String(f.get('currentImage') ?? '') || null;
 }
 
-function ruleFromForm(f: FormData, imageAssetId: string | null) {
+/** More pictures: new uploads replace them all; otherwise kept unless removed. */
+async function extraImagesFromForm(ctx: TenantContext, f: FormData): Promise<string[]> {
+  const files = f.getAll('extraImages').filter((x): x is File => x instanceof File && x.size > 0);
+  if (files.length) {
+    if (files.length > 3) throw new Error('at most 3 more pictures');
+    const ids: string[] = [];
+    for (const file of files) ids.push(await saveImageAsset(db(), ctx, file.type, Buffer.from(await file.arrayBuffer())));
+    return ids;
+  }
+  if (f.get('removeImage') === 'on' || f.get('removeExtraImages') === 'on') return [];
+  return f.getAll('currentExtraImage').map(String).filter(Boolean);
+}
+
+function ruleFromForm(f: FormData, imageAssetId: string | null, extraImageIds: string[] = []) {
   const reply = String(f.get('replyText') ?? '').trim();
   const label = String(f.get('setLabel') ?? '').trim();
   const channel = String(f.get('channelId') ?? '');
@@ -31,6 +44,7 @@ function ruleFromForm(f: FormData, imageAssetId: string | null) {
     aiReply: f.get('aiReply') === 'on',
     cooldownSeconds: Math.round(Number(f.get('cooldownMinutes') || 0) * 60),
     imageAssetId,
+    extraImageIds,
   };
 }
 
@@ -57,12 +71,12 @@ export default async function Keywords({ params, searchParams }: { params: Promi
   async function create(f: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await run(path, async () => createKeywordRule(db(), ctx, ruleFromForm(f, await imageFromForm(ctx, f))));
+    await run(path, async () => createKeywordRule(db(), ctx, ruleFromForm(f, await imageFromForm(ctx, f), await extraImagesFromForm(ctx, f))));
   }
   async function update(f: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await run(path, async () => updateKeywordRule(db(), ctx, String(f.get('id')), Number(f.get('version')), ruleFromForm(f, await imageFromForm(ctx, f))));
+    await run(path, async () => updateKeywordRule(db(), ctx, String(f.get('id')), Number(f.get('version')), ruleFromForm(f, await imageFromForm(ctx, f), await extraImagesFromForm(ctx, f))));
   }
   async function toggle(f: FormData) {
     'use server';
@@ -98,6 +112,7 @@ export default async function Keywords({ params, searchParams }: { params: Promi
                 <td><span className="small muted">{r.matchType === 'exact' ? 'exact' : 'phrase'}:</span> {r.patterns.join(', ')}</td>
                 <td className="small">
                   {r.imageAssetId && <img src={`/w/${slug}/media/${r.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 80, borderRadius: 6, marginBottom: 4 }} />}
+                  {!!r.extraImageIds?.length && <div className="small muted">+{r.extraImageIds.length} more picture{r.extraImageIds.length > 1 ? 's' : ''}</div>}
                   {r.replyText && <div>Reply: {r.replyText.slice(0, 80)}</div>}
                   {r.setLabel && <div>Label: {r.setLabel}</div>}
                   {r.product && <div>Product: <b>{r.product}</b></div>}
@@ -164,6 +179,21 @@ function RuleForm({ action, rule, channels, slug }: { action: (f: FormData) => P
         <>
           <input type="hidden" name="currentImage" value={rule.imageAssetId} />
           <label className="check"><input type="checkbox" name="removeImage" /> Remove picture</label>
+        </>
+      )}
+      <label>
+        More pictures (optional, up to 3; sent one after another right after the first bubble, e.g. the product from other angles). Choosing new files replaces the current ones.
+        {!!rule?.extraImageIds?.length && (
+          <span style={{ display: 'flex', gap: 6, margin: '6px 0' }}>
+            {rule.extraImageIds.map((id) => <img key={id} src={`/w/${slug}/media/${id}`} alt="More picture" style={{ maxWidth: 100, borderRadius: 8 }} />)}
+          </span>
+        )}
+        <input type="file" name="extraImages" multiple accept="image/jpeg,image/png,image/webp" />
+      </label>
+      {!!rule?.extraImageIds?.length && (
+        <>
+          {rule.extraImageIds.map((id) => <input key={id} type="hidden" name="currentExtraImage" value={id} />)}
+          <label className="check"><input type="checkbox" name="removeExtraImages" /> Remove the more pictures</label>
         </>
       )}
       <label>Customer label (optional)<input name="setLabel" maxLength={60} defaultValue={rule?.setLabel ?? ''} /></label>

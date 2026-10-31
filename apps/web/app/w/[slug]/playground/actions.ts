@@ -7,7 +7,7 @@ import { actionError, db, requireTenant } from '@/lib/server';
 
 export interface PlaygroundState {
   text?: string;
-  route?: { route: string; reason: string; bubbles: string[]; imageAssetId: string | null };
+  route?: { route: string; reason: string; bubbles: string[]; imageAssetId: string | null; extraImageIds: string[] };
   ai?: { ok: boolean; bubbles?: string[]; handover?: string; detail?: string; reason?: string; tokens?: string };
   error?: string;
 }
@@ -20,8 +20,9 @@ export async function runPlayground(_prev: PlaygroundState, f: FormData): Promis
     const r = await simulate(db(), ctx, { text, channelId: String(f.get('channelId')), callAi: f.get('callAi') === 'on', isLead: f.get('isLead') === 'on' }, createAiResolver(db()));
     const reply = 'reply' in r.route ? r.route.reply : null;
     const imageAssetId = r.route.route === 'keyword' ? r.route.imageAssetId : null;
+    const extraImageIds = r.route.route === 'keyword' && imageAssetId ? r.route.extraImageIds : [];
     // Shown as the customer would get it: picture with the first bubble, then the rest.
-    const route = { route: r.route.route, reason: r.route.reason, bubbles: reply ? splitBubbles(reply) : [], imageAssetId };
+    const route = { route: r.route.route, reason: r.route.reason, bubbles: reply ? splitBubbles(reply) : [], imageAssetId, extraImageIds };
     if (!r.ai) return { text, route };
     const ai = r.ai.ok
       ? {

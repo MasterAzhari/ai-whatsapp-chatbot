@@ -29,6 +29,7 @@ export interface KeywordRule {
   handover: boolean;
   cooldownSeconds: number;
   imageAssetId?: string | null; // picture sent with the reply
+  extraImageIds?: string[]; // up to 3 more pictures, sent right after the first bubble
   startsLead?: boolean; // matching it makes the chat a lead (lead mode)
   aiReply?: boolean; // the AI answers instead of the fixed reply (falls back to it when AI is off)
   product?: string | null; // only for chats about this product (null = any chat)

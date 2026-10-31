@@ -769,6 +769,33 @@ describe('bot template (copy setup to an agent workspace)', () => {
     assert.notEqual(copied[0]!.imageAssetId, img); // its own copy
     assert.deepEqual((await getImageAsset(db, ctxC, copied[0]!.imageAssetId!))!.data, png);
   });
+
+  test('a keyword can send more pictures right after its first bubble, and they copy with the template', async () => {
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    const [a, b, c] = [await saveImageAsset(db, ctxA, 'image/png', png), await saveImageAsset(db, ctxA, 'image/png', png), await saveImageAsset(db, ctxA, 'image/jpeg', png)];
+    await assert.rejects(createKeywordRule(db, ctxA, { name: 'Tanpa utama', matchType: 'phrase', patterns: ['zz'], replyText: 'x', extraImageIds: [b] })); // needs the first picture
+    await assert.rejects(createKeywordRule(db, ctxA, { name: 'Banyak', matchType: 'phrase', patterns: ['zz'], replyText: 'x', imageAssetId: a, extraImageIds: [b, b, b, b] }));
+    await createKeywordRule(db, ctxA, { name: 'Gambar mesin', matchType: 'phrase', patterns: ['gambar mesin basuh'], replyText: 'Ni gambar dia Cik\n---\nNak tahu lagi?', imageAssetId: a, extraImageIds: [b, c] });
+
+    const before = adapter.sent.length;
+    const m = await inbound('nak tengok gambar mesin basuh');
+    assert.equal(await routeInbound(db, tA, m.messageId, { aiFor: async () => null }), 'keyword');
+    // Bubbles are spaced out; make them all due, keeping their order.
+    await withTenant(db, tA, (tx) => tx.query("UPDATE outbox SET next_attempt_at = next_attempt_at - interval '1 hour' WHERE conversation_id = $1", [m.conversationId]));
+    await drainOnce(db, resolveAdapter);
+    const sent = adapter.sent.slice(before);
+    assert.deepEqual(sent.map((x) => [x.text, x.attachment?.mimeType ?? null]), [
+      ['Ni gambar dia Cik', 'image/png'], ['', 'image/png'], ['', 'image/jpeg'], ['Nak tahu lagi?', null],
+    ]);
+
+    const t = JSON.parse(JSON.stringify(await exportBotTemplate(db, ctxA)));
+    assert.equal(t.keywordRules.find((r: any) => r.name === 'Gambar mesin').extraImages.length, 2);
+    await importBotTemplate(db, ctxC, t, { replaceRules: true });
+    const r = (await listKeywordRules(db, ctxC)).find((x) => x.name === 'Gambar mesin')!;
+    assert.equal(r.extraImageIds?.length, 2);
+    assert.ok(!r.extraImageIds!.includes(b)); // its own copies
+    assert.equal((await getImageAsset(db, ctxC, r.extraImageIds![1]!))!.mimeType, 'image/jpeg');
+  });
 });
 
 describe('agents (owner adds workspaces and logins)', () => {

@@ -30,11 +30,18 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
             <>
               <div><b>{ROUTE[state.route.route as keyof typeof ROUTE] ?? state.route.route}</b> · <span className="muted">{state.route.reason}</span></div>
               {state.route.bubbles.map((b, i) => (
-                <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>
-                  {i === 0 && state.route!.imageAssetId && (
-                    <img src={`/w/${slug}/media/${state.route!.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8, marginBottom: 6 }} />
-                  )}
-                  {b}
+                <div key={i}>
+                  <div className="bubble outbound" style={{ marginTop: 8 }}>
+                    {i === 0 && state.route!.imageAssetId && (
+                      <img src={`/w/${slug}/media/${state.route!.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8, marginBottom: 6 }} />
+                    )}
+                    {b}
+                  </div>
+                  {i === 0 && (state.route!.extraImageIds ?? []).map((id) => (
+                    <div key={id} className="bubble outbound" style={{ marginTop: 8 }}>
+                      <img src={`/w/${slug}/media/${id}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8 }} />
+                    </div>
+                  ))}
                 </div>
               ))}
               {state.route.bubbles.length === 0 && state.route.imageAssetId && (
@@ -42,6 +49,11 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
                   <img src={`/w/${slug}/media/${state.route.imageAssetId}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8 }} />
                 </div>
               )}
+              {state.route.bubbles.length === 0 && (state.route.extraImageIds ?? []).map((id) => (
+                <div key={id} className="bubble outbound" style={{ marginTop: 8 }}>
+                  <img src={`/w/${slug}/media/${id}`} alt="Picture" style={{ display: 'block', maxWidth: 240, borderRadius: 8 }} />
+                </div>
+              ))}
             </>
           )}
           {state.ai &&

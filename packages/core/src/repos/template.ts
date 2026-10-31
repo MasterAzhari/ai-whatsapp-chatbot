@@ -14,6 +14,7 @@ export const TEMPLATE_FORMAT = 'chatbot-bot-template';
 
 // Staff numbers belong to one workspace, so they never travel in a template.
 const TemplateSettings = SettingsUpdate.omit({ expectedVersion: true, notifyNumbers: true });
+const TemplateImage = z.object({ mimeType: z.string(), data: z.string().max(Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 4) });
 const TemplateRule = z.object({
   name: z.string(),
   matchType: z.enum(['exact', 'phrase']),
@@ -28,7 +29,9 @@ const TemplateRule = z.object({
   aiReply: z.boolean().optional(),
   product: z.string().nullable().optional(),
   /** The rule's picture, carried in the file itself so it copies to other workspaces. */
-  image: z.object({ mimeType: z.string(), data: z.string().max(Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 4) }).optional(),
+  image: TemplateImage.optional(),
+  /** More pictures, sent after the first. */
+  extraImages: z.array(TemplateImage).max(3).optional(),
 });
 
 export const BotTemplate = z.object({
@@ -54,10 +57,15 @@ export async function exportBotTemplate(db: Db, ctx: TenantContext, sourceName?:
       settings,
       // Rules tied to one channel become workspace-wide: channel ids differ per workspace.
       keywordRules: await Promise.all(
-        rules.map(async ({ id: _id, version: _rv, updatedAt: _u, channelId: _c, imageAssetId, ...r }) => {
-          if (!imageAssetId) return r;
-          const img = await tx.query<{ mime_type: string; data: Buffer }>('SELECT mime_type, data FROM media_assets WHERE id = $1', [imageAssetId]);
-          return img.rows[0] ? { ...r, image: { mimeType: img.rows[0].mime_type, data: img.rows[0].data.toString('base64') } } : r;
+        rules.map(async ({ id: _id, version: _rv, updatedAt: _u, channelId: _c, imageAssetId, extraImageIds, ...r }) => {
+          const load = async (id: string) => {
+            const img = await tx.query<{ mime_type: string; data: Buffer }>('SELECT mime_type, data FROM media_assets WHERE id = $1', [id]);
+            return img.rows[0] ? { mimeType: img.rows[0].mime_type, data: img.rows[0].data.toString('base64') } : null;
+          };
+          const image = imageAssetId ? await load(imageAssetId) : null;
+          if (!image) return r;
+          const extraImages = (await Promise.all((extraImageIds ?? []).map(load))).filter((x) => x !== null);
+          return { ...r, image, ...(extraImages.length ? { extraImages } : {}) };
         }),
       ),
     };
@@ -85,7 +93,7 @@ export async function importBotTemplate(
   requireRole(ctx, 'admin');
   const t = BotTemplate.parse(input);
   // The picture gets a new id in this workspace; a placeholder lets validation see it is there.
-  const rules = t.keywordRules.map((r) => ({ ...RuleInput.parse({ ...r, imageAssetId: r.image ? PLACEHOLDER_ID : null }), image: r.image }));
+  const rules = t.keywordRules.map((r) => ({ ...RuleInput.parse({ ...r, imageAssetId: r.image ? PLACEHOLDER_ID : null, extraImageIds: r.image ? (r.extraImages ?? []).map(() => PLACEHOLDER_ID) : [] }), image: r.image, extraImages: r.image ? r.extraImages ?? [] : [] }));
   const { replyDelayMinSec: min, replyDelayMaxSec: max } = t.settings;
   if (min != null && max != null && max < min) throw new Error('template has a maximum reply delay below the minimum');
   return inTenant(db, ctx, async (tx) => {
@@ -110,10 +118,12 @@ export async function importBotTemplate(
     else rulesRemoved = (await tx.query('DELETE FROM keyword_rules WHERE name = ANY($1)', [rules.map((r) => r.name)])).rowCount ?? 0;
     for (const v of rules) {
       const imageId = v.image ? await insertImage(tx, ctx.tenantId, v.image.mimeType, Buffer.from(v.image.data, 'base64')) : null;
+      const extraIds: string[] = [];
+      for (const x of v.extraImages) extraIds.push(await insertImage(tx, ctx.tenantId, x.mimeType, Buffer.from(x.data, 'base64')));
       await tx.query(
-        `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply, product)
-         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-        [ctx.tenantId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, imageId, v.aiReply, v.product],
+        `INSERT INTO keyword_rules (tenant_id, channel_id, name, match_type, patterns, priority, enabled, reply_text, set_label, handover, cooldown_seconds, starts_lead, image_asset_id, ai_reply, product, extra_image_ids)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [ctx.tenantId, v.name, v.matchType, v.patterns, v.priority, v.enabled, v.replyText, v.setLabel, v.handover, v.cooldownSeconds, v.startsLead, imageId, v.aiReply, v.product, extraIds],
       );
     }
     const result = { rulesAdded: rules.length, rulesRemoved };
