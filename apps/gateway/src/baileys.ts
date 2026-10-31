@@ -63,6 +63,9 @@ export class BaileysSessionDriver implements SessionDriver {
       logger: quietLogger(this.channelId.slice(0, 8)),
       markOnlineOnConnect: false, // the owner's phone keeps receiving notifications
       syncFullHistory: false, // recent history still syncs; it arrives as 'append' and the app ignores it
+      // Links in replies (e.g. a YouTube video) get a preview card with a large thumbnail.
+      // Needs link-preview-js + sharp; if fetching the preview fails, the text is sent without one.
+      generateHighQualityLinkPreview: true,
     });
     this.sock = sock;
     if (this.state.state !== 'connected') this.state = { state: 'pairing' };
