@@ -687,6 +687,26 @@ describe('settings, rules and isolation', () => {
     assert.equal(afterN.rows[0].n, before.rows[0].n);
     assert.ok((await getUsageSummary(db, ctxA)).some((u) => u.source === 'playground'));
   });
+
+  test('playground can test a chat about a chosen product, and shows a product switch by the AI', async () => {
+    const mk = (name: string, product: string) =>
+      createKeywordRule(db, ctxA, { name, matchType: 'phrase', patterns: ['gambar pg'], priority: 47, replyText: name, product });
+    const made = [await mk('PG gambar aircond', 'Aircond'), await mk('PG gambar washer', 'EcoWash15')];
+    try {
+      const pick = async (product: string | null) => {
+        const r = await simulate(db, ctxA, { text: 'gambar pg', channelId: chA, callAi: false, product }, async () => null);
+        return r.route.route === 'keyword' ? r.route.ruleName : r.route.route;
+      };
+      assert.equal(await pick(null), 'PG gambar aircond');
+      assert.equal(await pick('EcoWash15'), 'PG gambar washer');
+      const ai = new MockAIProvider(() => 'Ini harga EcoWash15.\n[PRODUK: EcoWash15]');
+      const r = await simulate(db, ctxA, { text: 'ada mesin basuh?', channelId: chA, callAi: true, product: 'Aircond' }, async () => ai);
+      assert.equal(r.ai?.ok && r.ai.text, 'Ini harga EcoWash15.');
+      assert.equal(r.aiProduct, 'EcoWash15');
+    } finally {
+      for (const r of made) await updateKeywordRule(db, ctxA, r.id, r.version, { name: r.name, matchType: 'phrase', patterns: r.patterns, replyText: 'x', enabled: false });
+    }
+  });
 });
 
 describe('QR channels', () => {

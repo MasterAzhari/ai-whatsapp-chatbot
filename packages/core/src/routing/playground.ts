@@ -3,13 +3,15 @@ import { inTenant, requireRole, type TenantContext } from '../auth.js';
 import type { AIProvider, GenerateReplyResult } from '../ai/provider.js';
 import { loadRules } from '../repos/keywords.js';
 import { loadSettings } from '../repos/settings.js';
-import { AI_GUARDRAILS, decide, extractHandover, type Route } from './router.js';
+import { AI_GUARDRAILS, decide, extractHandover, productNote, ruleProducts, type Route } from './router.js';
 
 export interface PlaygroundResult {
   route: Route;
   ai?: GenerateReplyResult;
   /** The AI asked to hand the chat to staff (its reason), as the live bot would. */
   aiHandover?: string;
+  /** The AI moved the chat to this product, as the live bot would. */
+  aiProduct?: string;
 }
 
 /**
@@ -20,7 +22,7 @@ export interface PlaygroundResult {
 export async function simulate(
   db: Db,
   ctx: TenantContext,
-  input: { text: string; channelId: string; callAi: boolean; isLead?: boolean },
+  input: { text: string; channelId: string; callAi: boolean; isLead?: boolean; product?: string | null },
   aiFor: (tenantId: string) => Promise<AIProvider | null>,
 ): Promise<PlaygroundResult> {
   requireRole(ctx, 'admin');
@@ -35,17 +37,19 @@ export async function simulate(
     humanTakeover: false,
     optedOut: false,
     isLead: input.isLead ?? true,
+    product: input.product || null,
     aiAllowed: !!settings.aiModel,
     settings,
     rules,
   });
   if (route.route !== 'ai' || !input.callAi) return { route };
 
+  const products = ruleProducts(rules);
   const provider = await aiFor(ctx.tenantId);
   const ai: GenerateReplyResult = provider
     ? await provider.generateReply({
         model: settings.aiModel!,
-        systemInstruction: [settings.systemInstruction.trim(), `Your name is ${settings.personaName}.`, AI_GUARDRAILS].filter(Boolean).join('\n\n'),
+        systemInstruction: [settings.systemInstruction.trim(), `Your name is ${settings.personaName}.`, productNote(input.product, products), AI_GUARDRAILS].filter(Boolean).join('\n\n'),
         history: [{ role: 'customer', text: input.text }],
         knowledge: [],
         maxOutputTokens: settings.maxOutputTokens,
@@ -70,5 +74,6 @@ export async function simulate(
   );
   if (!ai.ok) return { route, ai };
   const h = extractHandover(ai.text);
-  return { route, ai: { ...ai, text: h.text }, ...(h.handover ? { aiHandover: h.reason ?? 'needs staff' } : {}) };
+  const moved = h.product ? products.find((p) => p.toLowerCase() === h.product!.toLowerCase()) : undefined;
+  return { route, ai: { ...ai, text: h.text }, ...(h.handover ? { aiHandover: h.reason ?? 'needs staff' } : {}), ...(moved ? { aiProduct: moved } : {}) };
 }

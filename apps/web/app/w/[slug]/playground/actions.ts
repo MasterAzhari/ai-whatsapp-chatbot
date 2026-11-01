@@ -7,34 +7,37 @@ import { actionError, db, requireTenant } from '@/lib/server';
 
 export interface PlaygroundState {
   text?: string;
+  product?: string;
   route?: { route: string; reason: string; bubbles: string[]; imageAssetId: string | null; extraImageIds: string[] };
-  ai?: { ok: boolean; bubbles?: string[]; handover?: string; detail?: string; reason?: string; tokens?: string };
+  ai?: { ok: boolean; bubbles?: string[]; handover?: string; product?: string; detail?: string; reason?: string; tokens?: string };
   error?: string;
 }
 
 export async function runPlayground(_prev: PlaygroundState, f: FormData): Promise<PlaygroundState> {
   const slug = String(f.get('slug'));
   const text = String(f.get('text') ?? '').slice(0, 4096);
+  const product = String(f.get('product') ?? '').slice(0, 100);
   try {
     const ctx = await requireTenant(slug);
-    const r = await simulate(db(), ctx, { text, channelId: String(f.get('channelId')), callAi: f.get('callAi') === 'on', isLead: f.get('isLead') === 'on' }, createAiResolver(db()));
+    const r = await simulate(db(), ctx, { text, channelId: String(f.get('channelId')), callAi: f.get('callAi') === 'on', isLead: f.get('isLead') === 'on', product: product || null }, createAiResolver(db()));
     const reply = 'reply' in r.route ? r.route.reply : null;
     const imageAssetId = r.route.route === 'keyword' ? r.route.imageAssetId : null;
     const extraImageIds = r.route.route === 'keyword' && imageAssetId ? r.route.extraImageIds : [];
     // Shown as the customer would get it: picture with the first bubble, then the rest.
     const route = { route: r.route.route, reason: r.route.reason, bubbles: reply ? splitBubbles(reply) : [], imageAssetId, extraImageIds };
-    if (!r.ai) return { text, route };
+    if (!r.ai) return { text, product, route };
     const ai = r.ai.ok
       ? {
           ok: true,
           bubbles: r.ai.text ? splitBubbles(r.ai.text) : [],
           handover: r.aiHandover,
+          product: r.aiProduct,
           tokens: `${r.ai.usage.inputTokens ?? 'no data'} in / ${r.ai.usage.outputTokens ?? 'no data'} out · ${r.ai.latencyMs} ms · ${r.ai.model}`,
         }
       : { ok: false, reason: r.ai.reason, detail: r.ai.detail };
-    return { text, route, ai };
+    return { text, product: r.ai.ok && r.aiProduct ? r.aiProduct : product, route, ai };
   } catch (err) {
-    return { text, error: actionError(err) };
+    return { text, product, error: actionError(err) };
   }
 }
 

@@ -5,7 +5,7 @@ import { runPlayground, sendAsMockCustomer, type PlaygroundState } from './actio
 
 const ROUTE = { none: 'No automatic reply', stop: 'Stop (opt-out)', human: 'Hand over to human', keyword: 'Keyword', media: 'Voice/picture: ask to type', ai: 'AI' } as const;
 
-export function PlaygroundForm({ slug, channels }: { slug: string; channels: Array<{ id: string; name: string; provider: string }> }) {
+export function PlaygroundForm({ slug, channels, products }: { slug: string; channels: Array<{ id: string; name: string; provider: string }>; products: string[] }) {
   const [state, action, pending] = useActionState<PlaygroundState, FormData>(runPlayground, {});
   const mock = channels.filter((c) => c.provider === 'mock');
   return (
@@ -18,6 +18,15 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
             {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
+        {products.length > 0 && (
+          <label>
+            Chat is about product
+            <select name="product" key={state.product ?? ''} defaultValue={state.product ?? ''}>
+              <option value="">Not known yet (new chat)</option>
+              {products.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+        )}
         <label>Customer message<textarea name="text" rows={3} required maxLength={4096} defaultValue={state.text} /></label>
         <label className="check"><input type="checkbox" name="callAi" /> Call the real AI if no keyword matches (uses tokens)</label>
         <label className="check"><input type="checkbox" name="isLead" defaultChecked /> Treat this chat as a lead (for &quot;Leads only&quot; mode)</label>
@@ -61,6 +70,7 @@ export function PlaygroundForm({ slug, channels }: { slug: string; channels: Arr
               <>
                 {state.ai.bubbles?.map((b, i) => <div key={i} className="bubble outbound" style={{ marginTop: 8 }}>{b}</div>)}
                 {state.ai.handover && <div className="small" style={{ marginTop: 8 }}><b>Hand over to staff</b> · {state.ai.handover} (staff get notified)</div>}
+                {state.ai.product && <div className="small" style={{ marginTop: 8 }}><b>Chat moves to product</b> · {state.ai.product} (picked above for your next test)</div>}
                 <div className="small muted">{state.ai.tokens}</div>
               </>
             ) : (
