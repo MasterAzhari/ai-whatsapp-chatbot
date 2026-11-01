@@ -5,7 +5,7 @@ import { cancelPendingAutomated, enqueueBubbles, enqueueReply } from '../outbox.
 import { loadRules } from '../repos/keywords.js';
 import { loadSettings, replyDelayMs, type BotSettings } from '../repos/settings.js';
 import { isStaffNumber, notifyStaff } from '../notify.js';
-import { matchPattern, pickRule, type KeywordRule } from './match.js';
+import { matchPattern, pickRule, sameProduct, type KeywordRule } from './match.js';
 
 /**
  * Decides how to answer one inbound message, in the order the spec requires:
@@ -106,17 +106,27 @@ export const AI_GUARDRAILS = [
 ].join('\n');
 
 const HANDOVER_TAG = /\[\[?\s*SERAH[_ ]STAF\s*(?::\s*([^\]\n]*))?\]?\]/gi;
+const PRODUCT_TAG = /\[\[?\s*PRODUK\s*:\s*([^\]\n]*)\]?\]/gi;
 
-/** Takes the AI's [SERAH_STAF: reason] tag out of a reply; the customer never sees it. */
-export function extractHandover(text: string): { text: string; handover: boolean; reason: string | null } {
+/**
+ * Takes the AI's [SERAH_STAF: reason] and [PRODUK: name] tags out of a reply; the
+ * customer never sees them. product is the last product the AI named, if any.
+ */
+export function extractHandover(text: string): { text: string; handover: boolean; reason: string | null; product: string | null } {
   let handover = false;
   let reason: string | null = null;
-  const clean = text.replace(HANDOVER_TAG, (_m, why: string | undefined) => {
-    handover = true;
-    reason ??= why?.trim() || null;
-    return '';
-  });
-  return { text: clean.replace(/\n{3,}/g, '\n\n').trim(), handover, reason };
+  let product: string | null = null;
+  const clean = text
+    .replace(HANDOVER_TAG, (_m, why: string | undefined) => {
+      handover = true;
+      reason ??= why?.trim() || null;
+      return '';
+    })
+    .replace(PRODUCT_TAG, (_m, name: string) => {
+      product = name.trim() || product;
+      return '';
+    });
+  return { text: clean.replace(/\n{3,}/g, '\n\n').trim(), handover, reason, product };
 }
 
 export interface RouterDeps {
@@ -133,6 +143,7 @@ interface Snapshot {
   settings: BotSettings;
   history: ChatTurn[];
   product: string | null;
+  products: string[];
 }
 
 async function loadContext(tx: Tx, messageId: string) {
@@ -153,9 +164,24 @@ async function loadContext(tx: Tx, messageId: string) {
   return rows[0];
 }
 
-/** Tells the AI which product the chat is about (set by its product keyword). */
-export const productNote = (product: string | null | undefined) =>
-  product ? `Produk yang Cik sedang tanya dalam chat ini: ${product}. Jawab untuk produk ini kecuali Cik tanya produk lain.` : '';
+/**
+ * Tells the AI which product the chat is about (set by a product keyword or by the AI),
+ * and how to move the chat to another product so product keywords (pictures, forms) follow.
+ */
+export const productNote = (product: string | null | undefined, products: string[] = []) =>
+  [
+    product ? `Produk yang Cik sedang tanya dalam chat ini: ${product}. Jawab untuk produk ini kecuali Cik tanya produk lain.` : '',
+    products.length > 1
+      ? `Produk dalam sistem: ${products.join(', ')}. Bila Cik beralih kepada satu produk lain dalam senarai ini, tulis [PRODUK: nama tepat dari senarai] pada baris terakhir jawapan; sistem buang tanda itu dan ingat produk baru.`
+      : '',
+  ].filter(Boolean).join('\n');
+
+/** The distinct products named by enabled keyword rules, in first-seen order. */
+export const ruleProducts = (rules: Array<{ enabled: boolean; product?: string | null }>) => {
+  const out: string[] = [];
+  for (const r of rules) if (r.enabled && r.product && !out.some((p) => sameProduct(p, r.product!))) out.push(r.product);
+  return out;
+};
 
 /** A chat is a lead from its lead keyword until leadDays have passed (0 = no limit). */
 export function leadActive(startedAt: Date | null, leadDays: number, now = new Date()): boolean {
@@ -397,7 +423,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           [m.conversation_id, messageId, settings.historyTurns],
         );
         const history = hist.rows.reverse().map((r) => ({ role: r.direction === 'inbound' ? 'customer' : 'assistant', text: r.body }) as ChatTurn);
-        return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history, product: m.product as string | null };
+        return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history, product: m.product as string | null, products: ruleProducts(rules) };
       }
     }
   });
@@ -410,7 +436,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
   const result: GenerateReplyResult = provider
     ? await provider.generateReply({
         model: s.aiModel!,
-        systemInstruction: [s.systemInstruction.trim(), `Your name is ${s.personaName}.`, productNote(phaseA.product), AI_GUARDRAILS].filter(Boolean).join('\n\n'),
+        systemInstruction: [s.systemInstruction.trim(), `Your name is ${s.personaName}.`, productNote(phaseA.product, phaseA.products), AI_GUARDRAILS].filter(Boolean).join('\n\n'),
         history: phaseA.history,
         knowledge: [], // knowledge retrieval arrives with the knowledge module
         maxOutputTokens: s.maxOutputTokens,
@@ -449,6 +475,9 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
       // Hand over first: the closing message then goes out as the handover notice
       // (origin system), which takeover does not block.
       if (h.handover) await handOver(tx, m.conversation_id);
+      // The AI moved the chat to another known product: product keywords follow it.
+      const moved = h.product ? phaseA.products.find((p) => sameProduct(p, h.product!)) : undefined;
+      if (moved) await tx.query('UPDATE conversations SET product = $2 WHERE id = $1', [m.conversation_id, moved]);
       if (h.text) {
         await enqueueBubbles(tx, { tenantId, conversationId: m.conversation_id, text: h.text, origin: h.handover ? 'system' : 'ai', idempotencyKey: key('ai'), delayMs: replyDelayMs(s) });
       }

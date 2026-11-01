@@ -384,6 +384,46 @@ describe('routing', () => {
     }
   });
 
+  test('the AI can move a chat to another product, and product keywords then follow it', async () => {
+    const mk = (name: string, patterns: string[], priority: number, product: string | null, extra = {}) =>
+      createKeywordRule(db, ctxA, { name, matchType: 'phrase', patterns, priority, replyText: name, product, ...extra });
+    const made = [
+      await mk('M lead fridge', ['nak info chillmaster x'], 6, 'ChillMaster X', { startsLead: true }),
+      await mk('M gambar fridge', ['gambar'], 47, 'ChillMaster X'),
+      await mk('M gambar washer', ['gambar'], 47, 'EcoWash15'),
+    ];
+    let seen = '';
+    const moving = new MockAIProvider((input) => {
+      seen = input.systemInstruction;
+      return input.history.at(-1)?.text.includes('mesin basuh')
+        ? 'EcoWash15 RM43 sebulan.\n---\nCik nak tengok gambar?\n[PRODUK: ecowash15]'
+        : 'Baik Cik.\n[PRODUK: Peti Ajaib]';
+    });
+    try {
+      const from = `move-${randomUUID()}`;
+      const first = await inbound('Saya nak info ChillMaster X', from);
+      assert.equal(await routeInbound(db, tA, first.messageId, deps), 'keyword');
+      const product = async () =>
+        (await withTenant(db, tA, (tx) => tx.query('SELECT product FROM conversations WHERE id = $1', [first.conversationId]))).rows[0].product;
+      // an unknown product name changes nothing
+      assert.equal(await routeInbound(db, tA, (await inbound('ok', from)).messageId, { aiFor: async () => moving }), 'ai_reply');
+      assert.equal(await product(), 'ChillMaster X');
+      assert.match(seen, /Produk dalam sistem: .*ChillMaster X.*EcoWash15/);
+      assert.equal(await routeInbound(db, tA, (await inbound('ada mesin basuh?', from)).messageId, { aiFor: async () => moving }), 'ai_reply');
+      assert.equal(await product(), 'EcoWash15');
+      const pic = await inbound('gambar', from);
+      assert.equal(await routeInbound(db, tA, pic.messageId, deps), 'keyword');
+      const routed = await withTenant(db, tA, (tx) => tx.query('SELECT route FROM messages WHERE id = $1', [pic.messageId]));
+      assert.equal(routed.rows[0].route.ruleName, 'M gambar washer');
+      const out = await withTenant(db, tA, (tx) =>
+        tx.query("SELECT body FROM messages WHERE conversation_id = $1 AND direction = 'outbound'", [first.conversationId]));
+      assert.ok(!out.rows.some((r) => String(r.body ?? '').includes('PRODUK')));
+    } finally {
+      while ((await routeOnce(db, deps)) > 0);
+      for (const r of made) await updateKeywordRule(db, ctxA, r.id, r.version, { name: r.name, matchType: 'phrase', patterns: r.patterns, replyText: 'x', enabled: false });
+    }
+  });
+
   test('voice note: one polite reply per 30 minutes, chat flagged for staff, bot stays on', async () => {
     const from = `voice-${randomUUID()}`;
     const v1 = await inbound('', from, [{ kind: 'audio' }]);
@@ -1082,9 +1122,10 @@ describe('staff alerts on WhatsApp', () => {
 
 describe('AI hands a chat to staff', () => {
   test('the [SERAH_STAF] tag is removed and its reason kept', () => {
-    assert.deepEqual(extractHandover('Terima kasih Cik 🙏\n[SERAH_STAF: borang lengkap]'), { text: 'Terima kasih Cik 🙏', handover: true, reason: 'borang lengkap' });
-    assert.deepEqual(extractHandover('[[serah staf]]'), { text: '', handover: true, reason: null });
-    assert.deepEqual(extractHandover('Harga RM115 [nota]'), { text: 'Harga RM115 [nota]', handover: false, reason: null });
+    assert.deepEqual(extractHandover('Terima kasih Cik 🙏\n[SERAH_STAF: borang lengkap]'), { text: 'Terima kasih Cik 🙏', handover: true, reason: 'borang lengkap', product: null });
+    assert.deepEqual(extractHandover('[[serah staf]]'), { text: '', handover: true, reason: null, product: null });
+    assert.deepEqual(extractHandover('Harga RM115 [nota]'), { text: 'Harga RM115 [nota]', handover: false, reason: null, product: null });
+    assert.deepEqual(extractHandover('Ini harga EcoWash15\n[PRODUK: EcoWash15]'), { text: 'Ini harga EcoWash15', handover: false, reason: null, product: 'EcoWash15' });
   });
 
   test('a form given bit by bit: AI closes, chat goes to staff, staff are alerted', async () => {
