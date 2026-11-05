@@ -14,6 +14,7 @@ export class GeminiProvider implements AIProvider {
     private readonly apiKey: string,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly baseUrl = BASE,
+    private readonly retryDelayMs = 1_500,
   ) {
     if (!apiKey) throw new Error('Gemini API key is missing');
   }
@@ -50,12 +51,20 @@ export class GeminiProvider implements AIProvider {
       });
     let res: Response;
     let json: GeminiResponse;
+    let thinkingOn = minimalThinking;
     try {
-      res = await call(minimalThinking);
+      res = await call(thinkingOn);
       json = (await res.json().catch(() => ({}))) as GeminiResponse;
       // A model that does not take this thinking level answers 400: ask again without it.
       if (minimalThinking && res.status === 400 && /thinking/i.test(json.error?.message ?? '')) {
+        thinkingOn = false;
         res = await call(false);
+        json = (await res.json().catch(() => ({}))) as GeminiResponse;
+      }
+      // Busy or overloaded (500/503): wait a moment and ask once more, while time remains.
+      if ((res.status === 500 || res.status === 503) && Date.now() - started < input.timeoutMs - 5_000) {
+        await new Promise((r) => setTimeout(r, this.retryDelayMs));
+        res = await call(thinkingOn);
         json = (await res.json().catch(() => ({}))) as GeminiResponse;
       }
     } catch (err) {

@@ -238,6 +238,25 @@ describe('gemini adapter', () => {
     await new GeminiProvider('k-123456789', f(false), 'https://x.test').generateReply({ ...input, model: 'gemini-2.5-flash-lite' });
     assert.equal(bodies[0].generationConfig.thinkingConfig, undefined);
   });
+  test('asks once more when Gemini is overloaded', async () => {
+    let calls = 0;
+    const f = (failures: number) => (async () => {
+      calls++;
+      if (calls <= failures) return new Response(JSON.stringify({ error: { message: 'This model is currently experiencing high demand.' } }), { status: 503 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Hai!' }] } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const slow = { ...input, timeoutMs: 20_000 };
+    assert.equal((await new GeminiProvider('k-123456789', f(1), 'https://x.test', 0).generateReply(slow)).ok, true);
+    assert.equal(calls, 2);
+    calls = 0;
+    const r = await new GeminiProvider('k-123456789', f(5), 'https://x.test', 0).generateReply(slow);
+    assert.equal((r as any).reason, 'error');
+    assert.equal(calls, 2);
+    calls = 0;
+    // No time left for a second try: give up at once.
+    await new GeminiProvider('k-123456789', f(5), 'https://x.test', 0).generateReply(input);
+    assert.equal(calls, 1);
+  });
   test('rejects odd model ids without calling out', async () => {
     let called = false;
     const f = (async () => { called = true; return new Response('{}'); }) as unknown as typeof fetch;
