@@ -162,7 +162,11 @@ export class BaileysSessionDriver implements SessionDriver {
     const ownId = generateMessageIDV2(this.sock.user?.id);
     this.ownIds.add(ownId);
     if (this.ownIds.size > 5000) this.ownIds.delete(this.ownIds.values().next().value!);
-    const content = image ? { image: image.data, mimetype: image.mimeType, ...(text ? { caption: text } : {}) } : { text };
+    const caption = text ? { caption: text } : {};
+    const content = !image ? { text }
+      : image.mimeType.startsWith('image/') ? { image: image.data, mimetype: image.mimeType, ...caption }
+      : image.mimeType.startsWith('video/') ? { video: image.data, mimetype: image.mimeType, ...caption }
+      : { document: image.data, mimetype: image.mimeType, fileName: image.fileName || 'document', ...caption };
     const sent = await this.sock.sendMessage(to, content, { messageId: ownId });
     const id = sent?.key.id;
     if (id) this.ownIds.add(id);

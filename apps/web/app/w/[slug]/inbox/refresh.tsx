@@ -12,6 +12,8 @@ export function AutoRefresh({ everyMs = 5000 }: { everyMs?: number }) {
       // Do not reload while the person is typing a reply.
       const el = document.activeElement;
       if (el instanceof HTMLTextAreaElement && el.value) return;
+      // Nor while a file is waiting to be sent.
+      if (document.querySelector<HTMLInputElement>('.wa-composer input[type=file]')?.files?.length) return;
       router.refresh();
     }, everyMs);
     return () => clearInterval(t);

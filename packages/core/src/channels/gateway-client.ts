@@ -51,10 +51,11 @@ export class GatewayChannelAdapter implements ChannelAdapter {
     return this.send('/send-text', input);
   }
 
-  /** A picture with the text as its caption (keyword replies with a poster or photo). */
+  /** A picture, video or document with the text as its caption (keyword pictures, files staff send from the Inbox). */
   async sendMedia(input: SendTextInput & { attachment: Attachment }): Promise<SendResult> {
     const { attachment, ...rest } = input;
-    return this.send('/send-image', { ...rest, caption: rest.text, mimeType: attachment.mimeType, data: attachment.data }, 60_000);
+    const path = attachment.kind === 'image' ? '/send-image' : '/send-media';
+    return this.send(path, { ...rest, caption: rest.text, mimeType: attachment.mimeType, data: attachment.data, fileName: attachment.fileName }, 120_000);
   }
 
   private async send(path: string, body: unknown, timeoutMs = this.timeoutMs): Promise<SendResult> {

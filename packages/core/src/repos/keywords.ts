@@ -155,11 +155,11 @@ export async function insertImage(tx: Tx, tenantId: string, mimeType: string, da
   return rows[0]!.id;
 }
 
-/** A stored picture, for showing it in the admin pages. */
-export async function getImageAsset(db: Db, ctx: TenantContext, id: string): Promise<{ mimeType: string; data: Buffer } | null> {
+/** A stored picture, video or document, for showing it in the admin pages. */
+export async function getImageAsset(db: Db, ctx: TenantContext, id: string): Promise<{ mimeType: string; data: Buffer; fileName: string | null } | null> {
   if (!z.string().uuid().safeParse(id).success) return null;
   return inTenant(db, ctx, async (tx) => {
-    const { rows } = await tx.query<{ mime_type: string; data: Buffer }>('SELECT mime_type, data FROM media_assets WHERE id = $1', [id]);
-    return rows[0] ? { mimeType: rows[0].mime_type, data: rows[0].data } : null;
+    const { rows } = await tx.query<{ mime_type: string; data: Buffer; file_name: string | null }>('SELECT mime_type, data, file_name FROM media_assets WHERE id = $1', [id]);
+    return rows[0] ? { mimeType: rows[0].mime_type, data: rows[0].data, fileName: rows[0].file_name } : null;
   });
 }

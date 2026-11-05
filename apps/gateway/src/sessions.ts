@@ -14,10 +14,15 @@ export interface SessionDriver {
   sendText(to: string, text: string, idempotencyKey: string, typingMs?: number, image?: OutgoingImage): Promise<{ providerMessageId: string }>;
 }
 
+/** A picture, video or document sent with an optional caption. */
 export interface OutgoingImage {
   data: Buffer;
   mimeType: string;
+  fileName?: string; // documents: the name the customer sees
 }
+
+/** File types the gateway sends: WhatsApp pictures, videos and common documents. */
+export const SEND_MEDIA_TYPES = /^(image\/(jpeg|png|webp)|video\/(mp4|3gpp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint)|text\/plain)$/;
 
 export type InboundSink = (channelId: string, events: unknown[]) => Promise<void>;
 

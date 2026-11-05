@@ -29,8 +29,10 @@ export interface MessageView {
   body: string | null;
   /** Readable names of media sent with the message, e.g. "Voice note". */
   attachments: string[];
-  /** Picture this system sent with the message (keyword replies). */
+  /** Picture, video or document this system sent with the message (keyword pictures, staff files). */
   imageAssetId: string | null;
+  mediaType: string | null; // mime type of imageAssetId
+  fileName: string | null; // documents: the name the customer sees
   status: string;
   statusDetail: string | null;
   route: { route: string; reason: string } | null; // why an inbound message was (not) answered
@@ -95,8 +97,10 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
     if (!r) return null;
     const settings = await loadSettings(tx, ctx.tenantId);
     const m = await tx.query(
-      `SELECT id, direction, origin, body, attachments, image_asset_id, status, status_detail, route, created_at
-         FROM messages WHERE conversation_id = $1 ORDER BY created_at, id`,
+      `SELECT m.id, m.direction, m.origin, m.body, m.attachments, m.image_asset_id, a.mime_type AS media_type, a.file_name,
+              m.status, m.status_detail, m.route, m.created_at
+         FROM messages m LEFT JOIN media_assets a ON a.id = m.image_asset_id
+        WHERE m.conversation_id = $1 ORDER BY m.created_at, m.id`,
       [id],
     );
     return {
@@ -117,6 +121,8 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
         origin: x.origin,
         body: x.body,
         imageAssetId: x.image_asset_id,
+        mediaType: x.media_type ?? null,
+        fileName: x.file_name ?? null,
         attachments: ((x.attachments ?? []) as Array<{ kind: string }>).map((a) => MEDIA_LABEL[a.kind] ?? 'Attachment'),
         status: x.status,
         statusDetail: x.status_detail,
@@ -127,24 +133,52 @@ export async function getConversation(db: Db, ctx: TenantContext, id: string): P
   });
 }
 
-const ReplyInput = z.object({ text: z.string().trim().min(1).max(4096), clientRequestId: z.string().max(100).optional() });
+/** Files staff can send from the Inbox, and how WhatsApp shows them. */
+export const SEND_FILE_TYPES: Record<string, 'image' | 'video' | 'document'> = {
+  'image/jpeg': 'image', 'image/png': 'image', 'image/webp': 'image',
+  'video/mp4': 'video', 'video/3gpp': 'video',
+  'application/pdf': 'document', 'text/plain': 'document',
+  'application/msword': 'document', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'document',
+  'application/vnd.ms-excel': 'document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'document',
+  'application/vnd.ms-powerpoint': 'document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'document',
+};
+export const MAX_SEND_FILE_BYTES = 10 * 1024 * 1024;
+
+const ReplyInput = z.object({
+  text: z.string().trim().max(4096).optional().default(''),
+  clientRequestId: z.string().max(100).optional(),
+  file: z.object({
+    mimeType: z.string().refine((t) => t in SEND_FILE_TYPES, 'file must be a picture (JPG, PNG, WebP), a video (MP4) or a document (PDF, Word, Excel, PowerPoint, text)'),
+    fileName: z.string().trim().min(1).max(200),
+    data: z.instanceof(Buffer).refine((b) => b.length > 0 && b.length <= MAX_SEND_FILE_BYTES, 'file must be 10 MB or less'),
+  }).optional(),
+}).refine((r) => r.text || r.file, 'type a message or attach a file')
+  .refine((r) => !r.file || r.text.length <= 1024, 'a message sent with a file can be up to 1024 characters');
 
 /**
- * Operator reply. Sending manually implies a human is handling the conversation, so
+ * Operator reply, optionally with a picture, video or document (the text becomes its caption).
+ * Sending manually implies a human is handling the conversation, so
  * it also turns on human takeover and cancels any queued automated reply.
  */
 export async function sendManualReply(db: Db, ctx: TenantContext, conversationId: string, input: z.input<typeof ReplyInput>) {
   requireRole(ctx, 'operator');
-  const { text, clientRequestId } = ReplyInput.parse(input);
+  const { text, clientRequestId, file } = ReplyInput.parse(input);
   return inTenant(db, ctx, async (tx) => {
     const lock = await tx.query('SELECT id FROM conversations WHERE id = $1 FOR UPDATE', [conversationId]);
     if (!lock.rows[0]) throw new Error('conversation not found');
     await tx.query("UPDATE conversations SET human_takeover = true, status = 'pending_human' WHERE id = $1 AND NOT human_takeover", [conversationId]);
     await cancelPendingAutomated(tx, conversationId);
+    const assetId = file
+      ? (await tx.query<{ id: string }>(
+          'INSERT INTO media_assets (tenant_id, mime_type, bytes, data, file_name) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+          [ctx.tenantId, file.mimeType, file.data.length, file.data, file.fileName],
+        )).rows[0]!.id
+      : null;
     return enqueueReply(tx, {
       tenantId: ctx.tenantId,
       conversationId,
       text,
+      imageAssetId: assetId,
       origin: 'human',
       authorUserId: ctx.user.id,
       idempotencyKey: `human:${clientRequestId ?? randomUUID()}`,

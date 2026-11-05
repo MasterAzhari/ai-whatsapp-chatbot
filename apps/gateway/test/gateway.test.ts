@@ -50,3 +50,13 @@ test('sends a picture with a caption; rejects other file types', async () => {
   const bad = await call(`/channels/${ch}/send-image`, { to: 'x', mimeType: 'application/pdf', data: png, idempotencyKey: 'img2' });
   assert.equal(bad.status, 400);
 });
+
+test('sends a video or a document; rejects types WhatsApp users cannot open safely', async () => {
+  const bytes = Buffer.from('0000001866747970', 'hex').toString('base64');
+  const v = await call(`/channels/${ch}/send-media`, { to: 'x', caption: 'Video promo', mimeType: 'video/mp4', data: bytes, idempotencyKey: 'vid1' });
+  assert.equal(v.status, 200);
+  const d = await call(`/channels/${ch}/send-media`, { to: 'x', mimeType: 'application/pdf', fileName: 'Brosur.pdf', data: bytes, idempotencyKey: 'doc1' });
+  assert.equal(d.status, 200);
+  const bad = await call(`/channels/${ch}/send-media`, { to: 'x', mimeType: 'text/html', data: bytes, idempotencyKey: 'doc2' });
+  assert.equal(bad.status, 400);
+});

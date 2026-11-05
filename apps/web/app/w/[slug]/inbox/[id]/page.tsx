@@ -5,6 +5,7 @@ import { addInternalNote, getConversation, listConversations, resumeBot, sendMan
 import { db, requireTenant } from '@/lib/server';
 import { Avatar, BotPill, ChatList, displayName } from '../chat-list';
 import { AutoRefresh } from '../refresh';
+import { AttachButton } from '../attach';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,14 +37,19 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
   async function reply(formData: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await sendManualReply(db(), ctx, id, { text: String(formData.get('text') ?? ''), clientRequestId: String(formData.get('rid') ?? '') || undefined });
+    const f = formData.get('file');
+    const file = f instanceof File && f.size > 0
+      ? { mimeType: f.type, fileName: f.name || 'file', data: Buffer.from(await f.arrayBuffer()) }
+      : undefined;
+    await sendManualReply(db(), ctx, id, { text: String(formData.get('text') ?? ''), clientRequestId: String(formData.get('rid') ?? '') || undefined, file });
     revalidatePath(path);
     redirect(path);
   }
   async function note(formData: FormData) {
     'use server';
     const ctx = await requireTenant(slug);
-    await addInternalNote(db(), ctx, id, String(formData.get('text') ?? ''));
+    const text = String(formData.get('text') ?? '').trim();
+    if (text) await addInternalNote(db(), ctx, id, text);
     revalidatePath(path);
     redirect(path);
   }
@@ -81,7 +87,13 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
       el: (
         <div className={`wa-bubble ${m.direction}`}>
           {m.direction === 'outbound' && ORIGIN[m.origin] && <div className="wa-origin">{ORIGIN[m.origin]}</div>}
-          {m.imageAssetId && <img src={`/w/${slug}/media/${m.imageAssetId}`} alt="Picture sent" className="wa-img" />}
+          {m.imageAssetId && (m.mediaType?.startsWith('video/') ? (
+            <video src={`/w/${slug}/media/${m.imageAssetId}`} controls preload="metadata" className="wa-img" />
+          ) : m.mediaType && !m.mediaType.startsWith('image/') ? (
+            <a href={`/w/${slug}/media/${m.imageAssetId}`} className="wa-file" download>📄 {m.fileName ?? 'Document'}</a>
+          ) : (
+            <img src={`/w/${slug}/media/${m.imageAssetId}`} alt="Picture sent" className="wa-img" />
+          ))}
           {m.attachments.length > 0 && <div className="wa-attach">📎 {m.attachments.join(', ')} <span className="muted">(open on phone)</span></div>}
           {m.body && <span className="wa-text">{m.body}</span>}
           <span className="wa-meta">
@@ -129,7 +141,8 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
         </div>
         <form action={reply} className="wa-composer">
           <input type="hidden" name="rid" value={randomUUID()} />
-          <textarea name="text" rows={1} placeholder={c.botState === 'on' ? 'Type a message (bot will stop for this number)' : 'Type a message'} required maxLength={4096} />
+          <AttachButton />
+          <textarea name="text" rows={1} placeholder={c.botState === 'on' ? 'Type a message (bot will stop for this number)' : 'Type a message'} maxLength={4096} />
           <button type="submit" formAction={note} className="wa-note-btn" title="Save as internal note (not sent to the customer)">📝</button>
           <button type="submit" className="wa-send" aria-label="Send">➤</button>
         </form>

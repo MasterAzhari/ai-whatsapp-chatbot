@@ -151,6 +151,8 @@ export type AdapterResolver = (tenantId: string, channelId: string) => Promise<C
 
 export type ProcessOutcome = 'sent' | 'retry' | 'failed' | 'unknown' | 'cancelled';
 
+const mediaKind = (mime: string) => (mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'document') as 'image' | 'video' | 'document';
+
 function backoffMs(attempt: number): number {
   return Math.min(15 * 60_000, 2_000 * 2 ** (attempt - 1));
 }
@@ -159,7 +161,7 @@ function backoffMs(attempt: number): number {
 export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolver): Promise<ProcessOutcome> {
   const prep = await withTenant(db, job.tenantId, async (tx) => {
     const { rows } = await tx.query(
-      `SELECT m.body, m.origin, img.mime_type AS image_type, img.data AS image_data, o.expires_at < now() AS expired, o.state,
+      `SELECT m.body, m.origin, img.mime_type AS image_type, img.data AS image_data, img.file_name, o.expires_at < now() AS expired, o.state,
               coalesce((SELECT typing_indicator FROM bot_settings b WHERE b.tenant_id = o.tenant_id), false) AS typing,
               c.human_takeover, ch.automation_enabled, ct.opted_out_at IS NOT NULL AS opted_out,
               pim.provider_identity
@@ -206,7 +208,7 @@ export async function processJob(db: Db, job: OutboxJob, resolve: AdapterResolve
     const typingMs = automated && prep.typing ? Math.min(6000, 1000 + (prep.body ?? '').length * 30) : 0;
     const send = { to: prep.provider_identity, text: prep.body ?? '', idempotencyKey: job.idempotencyKey, typingMs };
     result = prep.image_data && adapter.sendMedia
-      ? await adapter.sendMedia({ ...send, attachment: { kind: 'image', mimeType: prep.image_type, data: (prep.image_data as Buffer).toString('base64') } })
+      ? await adapter.sendMedia({ ...send, attachment: { kind: mediaKind(prep.image_type), mimeType: prep.image_type, data: (prep.image_data as Buffer).toString('base64'), ...(prep.file_name ? { fileName: prep.file_name } : {}) } })
       : await adapter.sendText(send);
   } catch (err) {
     result = { ok: false as const, retryable: false, unknown: true, error: (err as Error).message };

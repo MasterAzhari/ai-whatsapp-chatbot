@@ -226,6 +226,28 @@ describe('outbox', () => {
     await resumeBot(db, ctxOperatorA, conv);
   });
 
+  test('staff can send a document or video from the Inbox, with or without text', async () => {
+    const conv = await newConversation();
+    const pdf = Buffer.from('%PDF-1.4 test');
+    const doc = await sendManualReply(db, ctxOperatorA, conv, { text: 'Ini brosur', file: { mimeType: 'application/pdf', fileName: 'Brosur KHIND.pdf', data: pdf } });
+    const vid = await sendManualReply(db, ctxOperatorA, conv, { file: { mimeType: 'video/mp4', fileName: 'demo.mp4', data: Buffer.from('mp4') } });
+    mock.sent.length = 0;
+    await drainOnce(db, resolve);
+    const sentDoc = mock.sent.find((x) => x.attachment?.fileName === 'Brosur KHIND.pdf');
+    assert.equal(sentDoc?.attachment?.kind, 'document');
+    assert.equal(sentDoc?.text, 'Ini brosur');
+    assert.equal(Buffer.from(sentDoc!.attachment!.data!, 'base64').toString(), '%PDF-1.4 test');
+    assert.equal(mock.sent.find((x) => x.attachment?.mimeType === 'video/mp4')?.attachment?.kind, 'video');
+    const view = await getConversation(db, ctxOperatorA, conv);
+    const shown = view!.messages.find((m) => m.id === doc.messageId)!;
+    assert.equal(shown.mediaType, 'application/pdf');
+    assert.equal(shown.fileName, 'Brosur KHIND.pdf');
+    assert.equal((await status(vid.messageId)).status, 'sent');
+    await assert.rejects(sendManualReply(db, ctxOperatorA, conv, { file: { mimeType: 'text/html', fileName: 'x.html', data: Buffer.from('<b>') } }), /picture|video|document/);
+    await assert.rejects(sendManualReply(db, ctxOperatorA, conv, { text: '  ' }), /type a message or attach a file/);
+    await resumeBot(db, ctxOperatorA, conv);
+  });
+
   test('takeover that lands after an automated reply was claimed still stops it', async () => {
     const conv = await newConversation();
     const auto = await withTenant(db, tA, (tx) => enqueueReply(tx, { tenantId: tA, conversationId: conv, text: 'late', origin: 'ai', idempotencyKey: randomUUID() }));
