@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import makeWASocket, { Browsers, DisconnectReason, downloadMediaMessage, fetchLatestBaileysVersion, generateMessageIDV2, useMultiFileAuthState, type WAMessage, type WASocket } from 'baileys';
+import makeWASocket, { Browsers, DisconnectReason, downloadMediaMessage, fetchLatestBaileysVersion, generateMessageIDV2, getUrlInfo, useMultiFileAuthState, type WAMessage, type WASocket } from 'baileys';
+import { uploadThumb, youtubeId, youtubePreview } from './youtube-preview.js';
 import type { InboundSink, OutgoingImage, SessionDriver } from './sessions.js';
 import { isLiveOwnMessage, normalizeMessage, normalizeStatus, phoneFromJid, READABLE_MEDIA, readableAttachment, type GatewayEvent } from './normalize.js';
 
@@ -167,7 +168,12 @@ export class BaileysSessionDriver implements SessionDriver {
       : image.mimeType.startsWith('image/') ? { image: image.data, mimetype: image.mimeType, ...caption }
       : image.mimeType.startsWith('video/') ? { video: image.data, mimetype: image.mimeType, ...caption }
       : { document: image.data, mimetype: image.mimeType, fileName: image.fileName || 'document', ...caption };
-    const sent = await this.sock.sendMessage(to, content, { messageId: ownId });
+    const sock = this.sock;
+    // YouTube links get their card from oEmbed; other links use Baileys' own page fetch.
+    const preview = async (url: string) =>
+      (youtubeId(url) ? await youtubePreview(url, uploadThumb(sock.waUploadToServer)).catch(() => undefined) : undefined)
+      ?? getUrlInfo(url, { thumbnailWidth: 192, fetchOpts: { timeout: 3000 }, uploadImage: sock.waUploadToServer });
+    const sent = await sock.sendMessage(to, content, { messageId: ownId, ...(image ? {} : { getUrlInfo: preview }) });
     const id = sent?.key.id;
     if (id) this.ownIds.add(id);
     if (!id) throw new Error('WhatsApp did not return a message id');
