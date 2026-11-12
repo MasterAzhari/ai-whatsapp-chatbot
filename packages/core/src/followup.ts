@@ -4,6 +4,7 @@ import type { ChatTurn, GenerateReplyResult } from './ai/provider.js';
 import { enqueueReply, splitBubbles } from './outbox.js';
 import { loadSettings, replyDelayMs, type BotSettings } from './repos/settings.js';
 import { AI_GUARDRAILS, extractHandover, leadActive, type RouterDeps } from './routing/router.js';
+import { normalize } from './routing/match.js';
 
 /**
  * Auto follow-up. When a customer goes quiet after the bot's last message, the bot
@@ -26,6 +27,20 @@ export const DEFAULT_FOLLOWUPS = [
 const SKIP = 'SKIP';
 const EXCLUDED_LABELS = ['rejected'];
 const DUE_WINDOW_HOURS = 12; // a follow-up due longer ago than this is dropped, not sent late
+
+const CLOSING = /\b(terima kasih|terimakasih|tq|tqvm|thanks?|thank you|thx|takpe|takpa|tak pe|tak apa|x pe|xpe|xpa|takpelah|takpe la|nanti dulu|fikir dulu|fikir2 dulu|tanya dulu|tanya2 dulu|tanya tanya dulu|study dulu|bincang dulu|nanti saya|nanti kami|nanti sy|ok maklum|dah maklum|noted|roger|mesej balik|mesej semula|nanti info)\b/;
+const ASKING = /\b(berapa|brp|bpa|brape|macam mana|mcm mana|cmne|camne|bila|boleh ke|blh ke|ada tak|ada x|harga|kenapa|apa|nak tanya|nk tanya|tanya sikit|daftar|berminat|setuju|proceed)\b/;
+
+/**
+ * True when the customer's message only closes the chat ("ok terima kasih", "takpe la",
+ * "saya tanya2 dulu"). The AI was asked to answer SKIP then but often wrote a follow-up anyway.
+ */
+export function isClosingMessage(text: string): boolean {
+  if (text.includes('?')) return false;
+  const t = normalize(text);
+  if (!t || t.split(' ').length > 14) return false;
+  return CLOSING.test(t) && !ASKING.test(t);
+}
 
 interface Due {
   conversationId: string;
@@ -118,6 +133,14 @@ async function sendOne(db: Db, due: Due, deps: RouterDeps): Promise<'sent' | 'sk
     return { due: again, settings, history, aiAllowed };
   });
   if (!prep) return 'skipped';
+
+  const lastCustomer = [...prep.history].reverse().find((h) => h.role === 'customer');
+  if (lastCustomer && isClosingMessage(lastCustomer.text)) {
+    return withTenant(db, due.tenantId, async (tx) => {
+      await tx.query('UPDATE conversations SET followup_stopped_at = now() WHERE id = $1', [due.conversationId]);
+      return 'stopped' as const;
+    });
+  }
 
   const s = prep.settings;
   const steps = s.followupGapsMin.length;

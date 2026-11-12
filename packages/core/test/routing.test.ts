@@ -1070,6 +1070,22 @@ describe('auto follow-up', () => {
     assert.equal(await run(), 1);
     assert.deepEqual(await followups(conv2), [DEFAULT_FOLLOWUPS[0]]);
   });
+
+  test('no follow-up after the customer closes the chat ("ok terima kasih", "saya tanya2 dulu")', async () => {
+    const who = `fu-${randomUUID()}`;
+    await say('harga 1.0hp?', who);
+    const conv = await say('Ok terima kasih', who);
+    await age(conv, 61);
+    ai.result = ok('Hai Cik, masih berminat?');
+    assert.equal(await run(), 0);
+    await age(conv, 600);
+    assert.equal(await run(), 0);
+    assert.equal((await followups(conv)).length, 0);
+    await withTenant(db, tF, (tx) => tx.query("UPDATE conversations SET followup_stopped_at = followup_stopped_at - interval '12 hours' WHERE id = $1", [conv]));
+    await say('eh lupa, 1.5hp berapa?', who); // writing again starts a new count
+    await age(conv, 61);
+    assert.equal(await run(), 1);
+  });
 });
 
 describe('replies in several bubbles', () => {
