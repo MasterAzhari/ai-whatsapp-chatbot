@@ -144,6 +144,7 @@ interface Snapshot {
   history: ChatTurn[];
   product: string | null;
   products: string[];
+  reason?: string; // why the AI answers (no keyword, or a rule that lets the AI answer)
 }
 
 async function loadContext(tx: Tx, messageId: string) {
@@ -423,7 +424,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
           [m.conversation_id, messageId, settings.historyTurns],
         );
         const history = hist.rows.reverse().map((r) => ({ role: r.direction === 'inbound' ? 'customer' : 'assistant', text: r.body }) as ChatTurn);
-        return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history, product: m.product as string | null, products: ruleProducts(rules) };
+        return { conversationId: m.conversation_id, channelId: m.channel_id, text: m.body, settings, history, product: m.product as string | null, products: ruleProducts(rules), reason: d.reason };
       }
     }
   });
@@ -487,7 +488,7 @@ export async function routeInbound(db: Db, tenantId: string, messageId: string, 
         await setRoute(tx, messageId, { route: 'human', reason: `AI handed over to staff (${h.reason ?? 'no reason'})`, ...meta });
         return 'ai_handover';
       }
-      await setRoute(tx, messageId, { route: 'ai', reason: 'no keyword matched', ...meta });
+      await setRoute(tx, messageId, { route: 'ai', reason: phaseA.reason ?? 'no keyword matched', ...meta });
       return 'ai_reply';
     }
     // AI failed (timeout, quota, invalid model...): fixed fallback, or hand over to a human.
